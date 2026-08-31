@@ -29,9 +29,6 @@ public final class CrackTracker {
     /** Ticks between decay passes. Also the amount of healing one pass is worth. */
     private static final int HEAL_INTERVAL = 20;
 
-    /** Ceiling on spall, so damage spreading out from a break can crack a neighbour but never finish it. */
-    private static final double SPALL_CEILING = 0.95;
-
     private static final Map<ServerLevel, CrackTracker> LEVELS = new WeakHashMap<>();
 
     private final Long2ObjectMap<Crack> cracks = new Long2ObjectOpenHashMap<>();
@@ -128,7 +125,8 @@ public final class CrackTracker {
             if (state == null || state.isAir() || BlockProfile.of(level, cursor, state).indestructible()) {
                 continue;
             }
-            tracker.apply(level, cursor, tuning.crackSpall(), visible, SPALL_CEILING, false, tuning);
+            tracker.apply(level, cursor, tuning.crackSpall(), visible, tuning.crackSpallCeiling(),
+                    false, tuning);
         }
     }
 

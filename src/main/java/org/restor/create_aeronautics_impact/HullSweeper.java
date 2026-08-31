@@ -90,65 +90,14 @@ public final class HullSweeper {
     private static final int CONTACT_FLANK = 1;
     private static final int CONTACT_BEARING = 2;
 
-    /**
-     * The share of a load handed to the block directly below, against the share each of the four sides gets.
-     *
-     * <p>They come to one between them, because a load that is spread is divided rather than copied. Handing
-     * every neighbour the whole thing multiplied it by four each layer, which is how a boulder that touches
-     * two blocks ended up hollowing out everything within eight of them.
-     *
-     * <p>Nothing goes upwards at all. Weight travels down through what is carrying it and leans on what is
-     * beside that; it does not climb back over the thing pressing it down.
-     */
-    private static final double CRUSH_DOWN_SHARE = 0.6;
-
-    private static final double CRUSH_SIDE_SHARE = 0.1;
-
-    /** Ticks of travel the crush pass looks ahead along a moving hull's own velocity. */
-    private static final double CRUSH_LEAD_TICKS = 3.0;
-
-    /** Ceiling on that, so something moving very fast does not turn the pass into a carve with a wide net. */
+    /** Ceiling on the crush lead, so something moving very fast does not turn the pass into a wide carve. */
     private static final double CRUSH_LEAD_MAX = 4.0;
-
-    /**
-     * How many ticks of travel carving looks ahead. One tick is what the hull is about to cross and is
-     * therefore the least that can work, which is exactly why it does not: a hull under thrust or gravity
-     * arrives slightly faster than last tick's velocity said it would, and anything it overshoots into is
-     * uncarved rock met at full speed, which is the one case the solver has no contact for.
-     */
-    private static final double LOOKAHEAD_TICKS = 2.0;
 
     /** How far a hull's centre has to shift before it counts as having gone anywhere. */
     private static final double MOVED = 0.5;
 
     /** How long a hull has to stay put before it is treated as wedged rather than merely slow. */
     private static final int STILL_TICKS = 10;
-
-    /** How long a hull is given to free itself on centre-overlap alone before the sweep starts widening. */
-    private static final int STUCK_GRACE_TICKS = 60;
-
-    /**
-     * How long a hull keeps being dug at in total. Past the grace period the sweep stops asking whether a
-     * block's centre is inside the hull and starts asking whether the two merely share space, which is what a
-     * genuine wedge looks like: Rapier holds the pair a third of a block apart and calls it resolved, no
-     * contact is ever raised, and the centre test that freed everything else finds nothing to free.
-     */
-    private static final int DEEP_STUCK_TICKS = 400;
-
-    /**
-     * Past this the hull stops being the thing that gets its way.
-     *
-     * <p>Everything above it assumes the terrain is what has to move, which runs out of answers the moment
-     * the terrain cannot be moved: a hull jolted into bedrock or obsidian is dug at forever and freed never,
-     * and forever is what the player experiences as the build being gone. Something has to give, so past a
-     * long enough wait the hull grinds its own blocks away against whatever it is buried in - a wreck is a
-     * worse outcome than flying away and a far better one than a statue.
-     *
-     * <p>Only where a block's centre is swallowed whole, though, which is a burial and not a hull parked
-     * against a wall. The widened test the pass above it uses would have a contraption resting flush against
-     * bedrock quietly eating itself.
-     */
-    private static final int GRIND_STUCK_TICKS = DEEP_STUCK_TICKS;
 
     private static final int FORGET_TICKS = 600;
 
@@ -162,8 +111,6 @@ public final class HullSweeper {
      * meet it - and puts a second on how long any of that goes unnoticed.
      */
     private static final int CLEAR_MARGIN = 4;
-
-    private static final int MAX_QUIET_TICKS = 20;
 
     /**
      * Blocks per tick of descent credited to a hull on top of the speed it already has.
@@ -475,7 +422,10 @@ public final class HullSweeper {
             // A moving one also needs answering every tick rather than every fourth. It is over something new
             // each time, so a slow pass keeps arriving after the fact, and the build rides along the top of
             // whatever it should be going through. Only a settling one has nowhere to go but down.
-            final long crushEvery = moving ? (SweepDetail.cosmetic(detail) ? 1L : 2L) : tuning.crushInterval();
+            final long moves = Math.max(1, tuning.movingCrushInterval());
+            final long crushEvery = moving
+                    ? (SweepDetail.cosmetic(detail) ? moves : moves * 2L)
+                    : tuning.crushInterval();
             if (crush && (now + id) % crushEvery == 0L) {
                 final long started = ImpactStats.mark();
                 crush(serverLevel, subLevel, bounds, velocity, moving, clearSoft, massOf(subLevel), tuning);
@@ -498,8 +448,8 @@ public final class HullSweeper {
             // is neither gated on the detail rung nor given up on after a while - it only slows down.
             final long still = now - tracked.lastMoved;
             if (clearOverlaps && still >= STILL_TICKS) {
-                final boolean deep = still > STUCK_GRACE_TICKS;
-                final boolean desperate = still > GRIND_STUCK_TICKS;
+                final boolean deep = still > tuning.stuckGraceTicks();
+                final boolean desperate = still > tuning.grindStuckTicks();
                 // Each attempt costs more and reaches further than the one before it, so each runs less often
                 // than the one before it. The last one runs for as long as the hull sits there, which is why
                 // it has to be cheap in the steady state: a parked build looks the same as a buried one from
@@ -609,7 +559,7 @@ public final class HullSweeper {
         final double drifting = Math.sqrt(velocity.x * velocity.x + velocity.z * velocity.z) / 20.0
                 + QUIET_DRIFT_ALLOWANCE;
         final double ticks = Math.min(gap / falling, CLEAR_MARGIN / drifting);
-        return (int) Math.min(MAX_QUIET_TICKS, ticks);
+        return (int) Math.min(ImpactConfig.tuning().maxQuietTicks(), ticks);
     }
 
     /**
@@ -632,7 +582,7 @@ public final class HullSweeper {
         final Budget budget = new Budget(maxCleared, true);
         final Vector3d point = new Vector3d();
         final Vector3d origin = new Vector3d();
-        final double window = LOOKAHEAD_TICKS / 20.0;
+        final double window = ImpactConfig.tuning().carveLookaheadTicks() / 20.0;
         final double travel = speed * window;
         final int rung = SweepDetail.resolution(detail, travel);
         final double clip = SweepDetail.clip(rung);
@@ -845,7 +795,8 @@ public final class HullSweeper {
         // from. Answering only for what it touches right now means every pass arrives to find the thing
         // already carried by something else, which is what riding along the top of a forest is made of.
         final double lead = moving
-                ? Math.min(CRUSH_LEAD_TICKS / 20.0, CRUSH_LEAD_MAX / Math.max(velocity.length(), 1.0e-6))
+                ? Math.min(tuning.crushLeadTicks() / 20.0,
+                        CRUSH_LEAD_MAX / Math.max(velocity.length(), 1.0e-6))
                 : 0.0;
         final boolean leading = lead > 0.0;
         final double leadX = velocity.x * lead;
@@ -1064,7 +1015,9 @@ public final class HullSweeper {
                 if (ny < minY || ny > maxY) {
                     continue;
                 }
-                final double share = direction == Direction.DOWN ? CRUSH_DOWN_SHARE : CRUSH_SIDE_SHARE;
+                final double share = direction == Direction.DOWN
+                        ? tuning.crushDownShare()
+                        : tuning.crushSideShare();
                 enqueue(BlockPos.asLong(nx, ny, nz), onwards * share, step + 1, bearing);
             }
         }
@@ -1504,7 +1457,7 @@ public final class HullSweeper {
      * is also wide enough to start eating a landing pad.
      *
      * <p>{@code desperate} is the third and last, and it changes which side is expected to give way. See
-     * {@link #GRIND_STUCK_TICKS}.
+     * {@code grindStuckTicks}.
      */
     private static int sweepOverlaps(final ServerLevel level,
                                      final ServerSubLevel subLevel,

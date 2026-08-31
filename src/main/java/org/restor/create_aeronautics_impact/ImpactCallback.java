@@ -27,7 +27,6 @@ public final class ImpactCallback implements BlockSubLevelCollisionCallback {
     public static final ImpactCallback INSTANCE = new ImpactCallback();
 
     private static final Vector3d NO_TANGENT_MOTION = new Vector3d();
-    private static final double FRAGILE_TRIGGER = 4.0;
     private static final int PLOT_CACHE = 8;
 
     private final ContactTracker contacts = new ContactTracker();
@@ -36,6 +35,7 @@ public final class ImpactCallback implements BlockSubLevelCollisionCallback {
 
     private long budgetTick = Long.MIN_VALUE;
     private int destroyedThisTick;
+    private int examinedThisTick;
 
     private ImpactCallback() {
         forgetPlots();
@@ -66,7 +66,7 @@ public final class ImpactCallback implements BlockSubLevelCollisionCallback {
 
         // Resting and sliding contacts make up the overwhelming majority of what the pipeline reports, and
         // they carry almost no normal velocity. Rejecting them here keeps every lookup below off the hot path.
-        if (Math.abs(impactVelocity) < Math.min(tuning.breakSpeedFloor(), FRAGILE_TRIGGER)) {
+        if (Math.abs(impactVelocity) < Math.min(tuning.breakSpeedFloor(), tuning.fragileTrigger())) {
             return CollisionResult.NONE;
         }
 
@@ -77,6 +77,12 @@ public final class ImpactCallback implements BlockSubLevelCollisionCallback {
 
         final ServerLevel level = system.getLevel();
         rollTick(level.getGameTime());
+        // Past the ceiling contacts are not examined, so they are not broken either. The hull is still
+        // stopped by them, because a contact this mod declines is one Sable resolves the ordinary way.
+        final int ceiling = tuning.maxContactsPerTick();
+        if (ceiling > 0 && ++this.examinedThisTick > ceiling) {
+            return CollisionResult.NONE;
+        }
 
         final BlockState hitState = level.getBlockState(hitBlockPos);
         if (hitState.isAir()) {
@@ -313,6 +319,7 @@ public final class ImpactCallback implements BlockSubLevelCollisionCallback {
         if (now != this.budgetTick) {
             this.budgetTick = now;
             this.destroyedThisTick = 0;
+            this.examinedThisTick = 0;
             forgetPlots();
         }
     }

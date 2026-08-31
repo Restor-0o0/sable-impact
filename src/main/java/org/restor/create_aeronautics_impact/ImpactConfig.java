@@ -2,6 +2,8 @@ package org.restor.create_aeronautics_impact;
 
 import net.neoforged.neoforge.common.ModConfigSpec;
 
+import java.util.List;
+
 public final class ImpactConfig {
 
     private static final ModConfigSpec.Builder BUILDER = new ModConfigSpec.Builder();
@@ -29,6 +31,17 @@ public final class ImpactConfig {
                     "single block lands at 4.7 m/s; anything under that has to be out of reach or a contraption",
                     "digs its own grave the moment it is assembled, one block of settling at a time.")
             .defineInRange("minImpactSpeed", 6.0, 0.0, 100.0);
+
+    public static final ModConfigSpec.DoubleValue FRAGILE_TRIGGER = BUILDER
+            .comment("Speed (m/s) above which a fragile block - leaves, ice, glass, anything Sable tags as",
+                    "fragile, and anything given fragile=true in materialOverrides - is handed back to Sable to",
+                    "be shattered on its own terms rather than weighed against the hull.",
+                    "It sits below minImpactSpeed on purpose. Claiming every block in the world for this mod",
+                    "took Sable's own fragile handling away, and a pane of glass that survives because the ship",
+                    "hitting it was going too slowly to trigger an impact reads as a bug rather than as physics.",
+                    "Raise it to make fragile blocks behave like everything else; lower it to have them break on",
+                    "the gentlest touch.")
+            .defineInRange("fragileTrigger", 4.0, 0.0, 100.0);
 
     public static final ModConfigSpec.DoubleValue HARDNESS_SCALE = BUILDER
             .comment("How much a block's resistance raises the speed needed to break it. Higher = terrain resists more.")
@@ -117,6 +130,16 @@ public final class ImpactConfig {
                     "each time, and whatever it was resting on is behind it before a slow pass comes round, which",
                     "is how something far too heavy for a forest ends up rolling along the top of one.")
             .defineInRange("crushInterval", 4, 1, 100);
+
+    public static final ModConfigSpec.IntValue MOVING_CRUSH_INTERVAL = BUILDER
+            .comment("The same cadence for a contraption that is moving, which is the expensive case: a column",
+                    "scan plus a handful of probes for every block anywhere near the build, every time.",
+                    "1 answers weight every tick a hull is over new ground, which is what keeps something far",
+                    "too heavy for a forest from rolling along the top of one. Raising it is the largest single",
+                    "saving available on a landed or low-flying build, and what it costs is exactly that: a",
+                    "boulder rides the treetops for a moment at a time before the canopy under it gives.",
+                    "Doubled automatically while adaptiveDetail has the sweep at its coarsest rung.")
+            .defineInRange("movingCrushInterval", 1, 1, 40);
 
     public static final ModConfigSpec.IntValue CRUSH_SPAN = BUILDER
             .comment("How many blocks above its own underside a contraption looks for what is holding it up.",
@@ -227,6 +250,27 @@ public final class ImpactConfig {
                     "0 turns this extra loss off, at which point the spread alone bounds how far it carries.")
             .defineInRange("crushSpread", 3.0, 0.0, 8.0);
 
+    public static final ModConfigSpec.DoubleValue CRUSH_DOWN_SHARE = BUILDER
+            .comment("The share of a load handed to the block directly below, against the share each of the four",
+                    "sides gets. This and crushSideShare should come to one between them, because a load that is",
+                    "spread is divided rather than copied - handing every neighbour the whole thing multiplies it",
+                    "by four per layer, which hollows out everything within reach of a boulder that touched two",
+                    "blocks. Nothing is ever handed upwards: weight travels down through what is carrying it and",
+                    "leans on what is beside that, it does not climb back over the thing pressing it down.",
+                    "Higher makes the damage a narrow shaft; lower makes it a shallow bowl.")
+            .defineInRange("crushDownShare", 0.6, 0.0, 1.0);
+
+    public static final ModConfigSpec.DoubleValue CRUSH_SIDE_SHARE = BUILDER
+            .comment("The share each of the four sideways neighbours gets. Four of these plus crushDownShare is",
+                    "the whole load, so 0.1 spends 0.4 sideways and loses nothing.")
+            .defineInRange("crushSideShare", 0.1, 0.0, 0.25);
+
+    public static final ModConfigSpec.DoubleValue CRUSH_LEAD_TICKS = BUILDER
+            .comment("Ticks of travel the crush pass looks ahead along a moving hull's own velocity, so that",
+                    "ground is answered as the hull arrives over it rather than after it has gone past. Its",
+                    "effect is bounded internally, so a very fast hull does not turn the pass into a wide carve.")
+            .defineInRange("crushLeadTicks", 3.0, 0.0, 16.0);
+
     public static final ModConfigSpec.BooleanValue CRUSH_DISPLACE = BUILDER
             .comment("Whether a block giving way under a weight is shoved aside rather than destroyed. Something",
                     "heavy pressing into ground does not make the ground disappear, it moves it: the furrow a",
@@ -268,6 +312,20 @@ public final class ImpactConfig {
                     "really are carrying each other.")
             .defineInRange("backingWeight", 0.6, 0.0, 1.0);
 
+    public static final ModConfigSpec.IntValue BACKING_REACH = BUILDER
+            .comment("How many blocks behind a struck face count towards holding it up, and therefore how thick",
+                    "a wall has to be before it reads as a hillside rather than as a panel. A gap ends the count",
+                    "rather than being skipped past, so a facade with air behind it is a facade.",
+                    "At 3 a wooden hull goes through two blocks of stone and stops against three. Raise it for a",
+                    "world where only real mass stops anything; lower it to make thin walls matter.")
+            .defineInRange("backingReach", 3, 1, 8);
+
+    public static final ModConfigSpec.DoubleValue BACKING_BESIDE = BUILDER
+            .comment("What one block beside a struck face is worth against one block of depth behind it. Depth",
+                    "carries most of the load because that is the direction it actually travels; the lateral",
+                    "four are what keep one block in a wall from reading as free-standing. 0 counts depth alone.")
+            .defineInRange("backingBeside", 0.25, 0.0, 1.0);
+
     public static final ModConfigSpec.DoubleValue IMPACT_WEAR = BUILDER
             .comment("What winning an impact costs the winner, as a share of how evenly matched the two sides",
                     "were. Punching through something nearly as strong as you wears you down nearly as fast as",
@@ -300,6 +358,13 @@ public final class ImpactConfig {
                     "finish a block off on its own, so a crater edge crumbles into cracked stone and stops",
                     "instead of running away through the hillside one neighbour at a time. 0 disables it.")
             .defineInRange("crackSpall", 0.3, 0.0, 1.0);
+
+    public static final ModConfigSpec.DoubleValue CRACK_SPALL_CEILING = BUILDER
+            .comment("How far spall alone may crack a block, as a share of what breaking it takes. Below 1 a",
+                    "crater edge crumbles to cracked stone and stops instead of running away through the",
+                    "hillside one neighbour at a time. At 1 it can finish blocks off, and does: each one it",
+                    "finishes spalls its own neighbours, and the crater eats the mountain.")
+            .defineInRange("crackSpallCeiling", 0.95, 0.0, 1.0);
 
     public static final ModConfigSpec.IntValue MAX_CRACKED_BLOCKS = BUILDER
             .comment("How many part-damaged blocks are remembered per level at once. Blocks past this cap go",
@@ -409,6 +474,14 @@ public final class ImpactConfig {
                     "being turned ninety degrees by a tree that was about to give way anyway.")
             .defineInRange("carveMinSpeed", 8.0, 1.0, 1000.0);
 
+    public static final ModConfigSpec.DoubleValue CARVE_LOOKAHEAD_TICKS = BUILDER
+            .comment("How many ticks of travel carving looks ahead. One tick is what the hull is about to cross",
+                    "and is therefore the least that can work, which is exactly why it does not: a hull under",
+                    "thrust or gravity arrives slightly faster than last tick's velocity said it would, and",
+                    "anything it overshoots into is uncarved rock met at full speed - the one case the solver",
+                    "has no contact for. Higher clears more of the path and costs more per sweep.")
+            .defineInRange("carveLookaheadTicks", 2.0, 1.0, 8.0);
+
     public static final ModConfigSpec.IntValue CARVE_MAX_BLOCKS = BUILDER
             .comment("Cap on blocks carved per contraption per tick.")
             .defineInRange("carveMaxBlocks", 512, 1, 8192);
@@ -454,6 +527,25 @@ public final class ImpactConfig {
             .comment("Cap on overlapping blocks cleared per contraption per sweep.")
             .defineInRange("overlapSweepMaxBlocks", 512, 1, 8192);
 
+    public static final ModConfigSpec.IntValue STUCK_GRACE_TICKS = BUILDER
+            .comment("How long a wedged hull is given to free itself on centre-overlap alone before the sweep",
+                    "starts widening. Past this it stops asking whether a block's centre is inside the hull and",
+                    "starts asking whether the two merely share space, which is what a genuine wedge looks like:",
+                    "the solver holds the pair a third of a block apart and calls it resolved, no contact is",
+                    "ever raised, and the centre test that frees everything else finds nothing to free.")
+            .defineInRange("stuckGraceTicks", 60, 1, 6000);
+
+    public static final ModConfigSpec.IntValue GRIND_STUCK_TICKS = BUILDER
+            .comment("How long a hull stays buried before it stops being the thing that gets its way.",
+                    "Everything above this assumes the terrain is what has to move, which runs out of answers",
+                    "the moment the terrain cannot be moved: a hull jolted into bedrock is dug at forever and",
+                    "freed never, and forever is what the player experiences as the build being gone. So past a",
+                    "long enough wait the hull grinds its own blocks away against whatever it is buried in - a",
+                    "wreck is a worse outcome than flying away and a far better one than a statue.",
+                    "Only where a block's centre is swallowed whole, which is a burial rather than a hull parked",
+                    "against a wall. Set it very high to turn grinding off and let buried hulls stay buried.")
+            .defineInRange("grindStuckTicks", 400, 1, 1728000);
+
     public static final ModConfigSpec.IntValue SWEEP_SCAN_BUDGET = BUILDER
             .comment("Ceiling on the work all sweeps together may do in one tick, counted in block reads",
                     "rather than in blocks: walking a block of the swept region costs one, and each step of the",
@@ -464,6 +556,100 @@ public final class ImpactConfig {
                     "like weak gravity, because everything in the world falls in slow motion. Work skipped here",
                     "is picked up on the next sweep, not lost.")
             .defineInRange("sweepScanBudget", 24576, 1024, 1048576);
+
+    public static final ModConfigSpec.IntValue SWEEP_FINEST_DETAIL = BUILDER
+            .comment("The finest rung the sweep is allowed to sample at, from 0 to 3. Rung 0 asks about the",
+                    "hull's path twice per block travelled; rung 1 asks about it once and a half and widens the",
+                    "cube each sample covers to match, so the samples still overlap and nothing gets through.",
+                    "What is lost is the shape of the hole: a hull passing a block corner-on is caught by a",
+                    "wider probe that also catches the block beside it, so the tunnel comes out rounder and",
+                    "wider than the thing that made it. Raising this to 1 is close to a third off the sweep.")
+            .defineInRange("sweepFinestDetail", 0, 0, 3);
+
+    public static final ModConfigSpec.DoubleValue COARSE_SWEEP_TRAVEL = BUILDER
+            .comment("Travel per lookahead window, in blocks, past which a hull is swept coarsely whatever the",
+                    "server is doing. Precision costs the most exactly where it is worth the least: a hull",
+                    "creeping into a wall wants an answer good to half a block, and one arriving at sixty metres",
+                    "a second is going to leave a hole either way while costing far more to sample.",
+                    "Two blocks is about twenty metres a second - above anything under its own power, below",
+                    "anything that has been falling for a while.")
+            .defineInRange("coarseSweepTravel", 2.0, 0.25, 64.0);
+
+    public static final ModConfigSpec.IntValue MAX_QUIET_TICKS = BUILDER
+            .comment("The longest a hull with nothing near it may be left unswept. The window is already bounded",
+                    "by how far the hull could travel before it could reach anything; this cap is only there for",
+                    "what the reading cannot know about - ground generated underneath it, a player building up",
+                    "to meet it. Stretching it is nearly free on a world full of parked airships, and what it",
+                    "costs is that a tower thrown up under a hovering build goes unnoticed for that long.")
+            .defineInRange("maxQuietTicks", 20, 1, 200);
+
+    public static final ModConfigSpec.IntValue BACKING_MEMO_TICKS = BUILDER
+            .comment("How many ticks a backing reading is kept for. What is behind a block is the slowest-changing",
+                    "thing there is, except where a hull is currently eating it - which is precisely where this",
+                    "is asked. A stale reading says a block still has a hillside behind it a moment after the",
+                    "hillside went, so the block holds when it should have given; the next refresh corrects it.",
+                    "What is bought is that a hull with thousands of contacts a tick pays for the look once every",
+                    "few ticks instead of every one.")
+            .defineInRange("backingMemoTicks", 1, 1, 40);
+
+    public static final ModConfigSpec.IntValue MAX_CONTACTS_PER_TICK = BUILDER
+            .comment("How many contacts are examined per tick before the rest are waved through, or 0 for no",
+                    "limit. maxBlocksPerTick already caps how much is destroyed, and destruction was never the",
+                    "whole cost: a hull flush against a hillside reports thousands of contacts a tick, and every",
+                    "one is a pair of block states, a profile, a plot resolve and a look at what holds the",
+                    "terrain up, spent to conclude that this square metre of stone is the same as the last one.",
+                    "Contacts past the ceiling are not examined and so are not broken either. The hull is still",
+                    "stopped by them, so what it costs is that a very heavy pile-up chews through terrain more",
+                    "slowly than it should for as long as it lasts, rather than costing the tick.")
+            .defineInRange("maxContactsPerTick", 0, 0, 1000000);
+
+    public static final ModConfigSpec.BooleanValue BLOCK_UPDATES = BUILDER
+            .comment("Whether a silent removal - one past maxBreakEffectsPerTick - still tells the blocks around",
+                    "it that it has gone. Setting a block to air normally costs far more than the write: every",
+                    "neighbour is notified, which in a loaded-up pack is redstone, light, block entities and",
+                    "every mod with an opinion about the block next door. It is by a wide margin the most",
+                    "expensive thing this mod does.",
+                    "Off, the clients are still told, so nothing goes stale on screen; what is skipped is the",
+                    "tidying up. A torch on the wall of a fresh tunnel stays floating, sand above the hole does",
+                    "not fall until something else pokes it, and redstone beside the crater does not recalculate.",
+                    "The blocks are gone either way.")
+            .define("blockUpdates", true);
+
+    public static final ModConfigSpec.ConfigValue<List<? extends String>> MATERIAL_OVERRIDES = BUILDER
+            .comment("Per-block settings, for saying what vanilla's own numbers do not.",
+                    "Everything else here derives a block's strength from mining hardness and blast resistance,",
+                    "because those two are the only stats every block in every mod actually has. What they are",
+                    "not is a considered opinion: an author picks them to place a block on a pickaxe tier, so",
+                    "the immovable heart of a machine can easily come out softer than gravel.",
+                    "An entry is a selector followed by settings, separated by spaces or commas:",
+                    "  \"minecraft:obsidian      resistance=6\"",
+                    "  \"#minecraft:leaves       soft=true\"",
+                    "  \"create:*                scale=1.5\"",
+                    "  \"mekanism:*              indestructible=false\"",
+                    "Selectors are an exact block id, a block tag written with a leading #, every block in a",
+                    "namespace written namespace:*, or every block at all written *.",
+                    "Settings are:",
+                    "  resistance=N     the block's strength outright, replacing the vanilla derivation. The",
+                    "                   scale is the one the model works in after the hardness range has been",
+                    "                   compressed: about 0.6 for dirt, 1.0 for wood, 1.4 for stone, 3 for",
+                    "                   obsidian. Turn on logPerformance and hit something to see live numbers.",
+                    "  scale=N          a multiplier on that strength, derived or given. 2 doubles it.",
+                    "  indestructible=  true is never broken by anything this mod does; false takes that away",
+                    "                   from a block that inherited it from indestructibleResistance.",
+                    "  fragile=         true shatters the block at fragileTrigger rather than weighing it",
+                    "                   against the hull, the way leaves and glass do.",
+                    "  soft=            true makes hulls pass through the block and clear it the way they clear",
+                    "                   undergrowth. It gives up its collider to do so, so a hull is not stopped",
+                    "                   by something it is about to mow down.",
+                    "A block may be caught by several entries at once, and the most specific one to name a given",
+                    "setting decides it: an exact id beats a tag, a tag beats a namespace, a namespace beats *,",
+                    "and among equals the entry written later wins. Settings are read one at a time, so a",
+                    "namespace rule setting scale and an exact rule setting fragile both apply.",
+                    "A rule naming a block or tag no installed mod provides never matches and is not an error,",
+                    "which is what lets one file cover a pack whose mod list changes. Anything that does not",
+                    "parse is dropped with a line in the log and the rest of the file is honoured.")
+            .defineListAllowEmpty("materialOverrides", List.of(),
+                    () -> "minecraft:obsidian resistance=6", entry -> entry instanceof String);
 
     public static final ModConfigSpec.BooleanValue LOG_PERFORMANCE = BUILDER
             .comment("Print this mod's own share of the server tick to the log every five seconds. Off by",
@@ -546,9 +732,30 @@ public final class ImpactConfig {
                          boolean punchThrough,
                          double punchThroughRatio,
                          double breakDragMass,
-                         double breakDragMax) {
+                         double breakDragMax,
+                         double fragileTrigger,
+                         int movingCrushInterval,
+                         double crushDownShare,
+                         double crushSideShare,
+                         double crushLeadTicks,
+                         int backingReach,
+                         double backingBeside,
+                         double crackSpallCeiling,
+                         double carveLookaheadTicks,
+                         int stuckGraceTicks,
+                         int grindStuckTicks,
+                         int maxQuietTicks,
+                         int backingMemoTicks,
+                         int maxContactsPerTick,
+                         boolean blockUpdates) {
 
         static Tuning read() {
+            // Two of the settings do not belong to any one tick. The sweep ladder is pure arithmetic with
+            // nothing from the game in it, so it is told rather than asked; the material table is parsed text,
+            // so it is built once here rather than per block.
+            SweepDetail.configure(SWEEP_FINEST_DETAIL.get(), COARSE_SWEEP_TRAVEL.get());
+            MaterialOverrides.reload(MATERIAL_OVERRIDES.get());
+
             final double strength = IMPACT_STRENGTH.get();
             return new Tuning(
                     MIN_IMPACT_SPEED.get(),
@@ -593,7 +800,22 @@ public final class ImpactConfig {
                     PUNCH_THROUGH.get(),
                     PUNCH_THROUGH_RATIO.get(),
                     BREAK_DRAG_MASS.get(),
-                    BREAK_DRAG_MAX.get());
+                    BREAK_DRAG_MAX.get(),
+                    FRAGILE_TRIGGER.get(),
+                    MOVING_CRUSH_INTERVAL.get(),
+                    CRUSH_DOWN_SHARE.get(),
+                    CRUSH_SIDE_SHARE.get(),
+                    CRUSH_LEAD_TICKS.get(),
+                    BACKING_REACH.get(),
+                    BACKING_BESIDE.get(),
+                    CRACK_SPALL_CEILING.get(),
+                    CARVE_LOOKAHEAD_TICKS.get(),
+                    STUCK_GRACE_TICKS.get(),
+                    GRIND_STUCK_TICKS.get(),
+                    MAX_QUIET_TICKS.get(),
+                    BACKING_MEMO_TICKS.get(),
+                    MAX_CONTACTS_PER_TICK.get(),
+                    BLOCK_UPDATES.get());
         }
 
         /** The lowest speed at which any block, however soft and however heavy the ram, could give way. */

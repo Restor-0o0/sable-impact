@@ -27,6 +27,24 @@ public final class SweepDetail {
     private static final int MIN_STEPS = 2;
     private static final int MAX_STEPS = 96;
 
+    /** The shipped defaults, and what the ladder reads as until the config has been through it. */
+    public static final int FINEST_DEFAULT = 0;
+    public static final double COARSE_TRAVEL_DEFAULT = 2.0;
+
+    private static volatile int finest = FINEST_DEFAULT;
+    private static volatile double coarseTravel = COARSE_TRAVEL_DEFAULT;
+
+    /**
+     * Takes the two settings that shape the ladder from the config.
+     *
+     * <p>Pushed in rather than read out because this class is pure arithmetic and deliberately mentions
+     * nothing from Minecraft or NeoForge, which is what lets it be unit tested without a game around it.
+     */
+    public static void configure(final int finestRung, final double coarseAt) {
+        finest = Math.clamp(finestRung, 0, LEVELS - 1);
+        coarseTravel = coarseAt;
+    }
+
     /**
      * The travel per lookahead window past which a hull is swept coarsely whatever the server is doing.
      *
@@ -40,8 +58,6 @@ public final class SweepDetail {
      * <p>Two blocks of travel is twenty metres a second, comfortably above anything under its own power and
      * comfortably below anything that has been falling for a while.
      */
-    private static final double COARSE_TRAVEL = 2.0;
-
     private SweepDetail() {
     }
 
@@ -61,7 +77,7 @@ public final class SweepDetail {
      * server being busy, and a fast hull on an idle server should still get all of them.
      */
     public static int resolution(final int level, final double travel) {
-        return Math.max(rung(level), travel >= COARSE_TRAVEL ? 1 : 0);
+        return Math.max(rung(level), travel >= coarseTravel ? 1 : 0);
     }
 
     /**
@@ -80,6 +96,6 @@ public final class SweepDetail {
     }
 
     private static int rung(final int level) {
-        return Math.clamp(level, 0, LEVELS - 1);
+        return Math.clamp(level, finest, LEVELS - 1);
     }
 }

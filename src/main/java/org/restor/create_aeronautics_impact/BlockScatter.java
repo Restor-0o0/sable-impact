@@ -4,6 +4,8 @@ import net.minecraft.core.BlockPos;
 import net.minecraft.server.level.ServerLevel;
 import net.minecraft.world.entity.item.FallingBlockEntity;
 import net.minecraft.world.phys.Vec3;
+import net.minecraft.world.level.block.Block;
+import net.minecraft.world.level.block.Blocks;
 import net.minecraft.world.level.block.state.BlockState;
 import org.joml.Vector3d;
 
@@ -72,18 +74,32 @@ public final class BlockScatter {
     }
 
     /**
+     * What a silent removal tells the world about itself when {@code blockUpdates} is off.
+     *
+     * <p>The clients are still told, so nothing goes stale on screen; the neighbour notification and the
+     * shape update are what is skipped, and those are the expensive half.
+     */
+    private static final int QUIET_REMOVAL =
+            Block.UPDATE_CLIENTS | Block.UPDATE_KNOWN_SHAPE | Block.UPDATE_SUPPRESS_DROPS;
+
+    /**
      * Removes a block, spending a break effect on it while this tick still has any to spend. Past that the
      * removal is silent, which also means it drops nothing - mass destruction that drops its items buries the
      * server in item entities long before the missing particles are noticed.
      */
     public static void clear(final ServerLevel level, final BlockPos pos, final boolean drop) {
         rollOver(level);
-        if (effects < ImpactConfig.tuning().maxBreakEffectsPerTick()) {
+        final ImpactConfig.Tuning tuning = ImpactConfig.tuning();
+        if (effects < tuning.maxBreakEffectsPerTick()) {
             effects++;
             level.destroyBlock(pos, drop);
             return;
         }
-        level.removeBlock(pos, false);
+        if (tuning.blockUpdates()) {
+            level.removeBlock(pos, false);
+            return;
+        }
+        level.setBlock(pos, Blocks.AIR.defaultBlockState(), QUIET_REMOVAL);
     }
 
     private static boolean scatters(final ServerLevel level,

@@ -26,7 +26,7 @@ import java.util.Arrays;
  */
 public final class Backing {
 
-    private static final int MEMO = 4096;
+    private static final int MEMO = 16384;
 
     private static final long[] KEYS = new long[MEMO];
     private static final double[] HELD = new double[MEMO];
@@ -67,7 +67,8 @@ public final class Backing {
 
     private static double read(final ServerLevel level, final BlockPos pos,
                                final int axis, final int sign, final double weight) {
-        roll(level);
+        final ImpactConfig.Tuning tuning = ImpactConfig.tuning();
+        roll(level, tuning.backingMemoTicks());
 
         final long key = HashCommon.mix(pos.asLong() * 6L + axis * 2L + (sign > 0 ? 1L : 0L));
         final int slot = (int) key & (MEMO - 1);
@@ -76,17 +77,19 @@ public final class Backing {
         }
 
         final BlockPos.MutableBlockPos cursor = new BlockPos.MutableBlockPos();
+        final int reach = tuning.backingReach();
         final double held = ImpactResolver.backed(ImpactResolver.support(
-                behind(level, cursor, pos, axis, sign), beside(level, cursor, pos, axis)), weight);
+                behind(level, cursor, pos, axis, sign, reach), beside(level, cursor, pos, axis),
+                reach, tuning.backingBeside()), weight);
         KEYS[slot] = key;
         HELD[slot] = held;
         return held;
     }
 
     private static int behind(final ServerLevel level, final BlockPos.MutableBlockPos cursor,
-                              final BlockPos pos, final int axis, final int sign) {
+                              final BlockPos pos, final int axis, final int sign, final int reach) {
         int count = 0;
-        for (int step = 1; step <= ImpactResolver.BACKING_REACH; step++) {
+        for (int step = 1; step <= reach; step++) {
             offset(cursor, pos, axis, sign * step);
             // A gap ends the count rather than skipping past it: what is behind a hole is not holding
             // anything up in front of it.
@@ -139,13 +142,13 @@ public final class Backing {
     }
 
     /**
-     * Answers are kept for the tick that produced them and no longer. A hull ploughing a wall asks about the
-     * same handful of blocks from thousands of contacts, and the wall it is asking about is being taken apart
-     * as it asks.
+     * Answers are kept for as long as {@code backingMemoTicks} allows. At one tick, which is the default,
+     * that is the tick that produced them and no longer: a hull ploughing a wall asks about the same handful
+     * of blocks from thousands of contacts, and the wall it is asking about is being taken apart as it asks.
      */
-    private static void roll(final ServerLevel level) {
+    private static void roll(final ServerLevel level, final int ticks) {
         final long now = level.getGameTime();
-        if (now == memoTick && level.dimension() == memoDimension) {
+        if (level.dimension() == memoDimension && now >= memoTick && now - memoTick < ticks) {
             return;
         }
         memoTick = now;

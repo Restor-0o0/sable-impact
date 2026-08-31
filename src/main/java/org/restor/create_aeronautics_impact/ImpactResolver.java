@@ -258,21 +258,22 @@ public final class ImpactResolver {
         return Math.abs(impactVelocity) >= breakSpeed * punchThroughRatio;
     }
 
-    /** How far behind a struck face {@link Backing} looks for something bearing the load. */
+    /** The shipped default for how far behind a struck face {@link Backing} looks for the load bearer. */
     public static final int BACKING_REACH = 3;
 
-    /** What one block beside a struck face is worth against one block of depth behind it. */
-    private static final double BACKING_BESIDE = 0.25;
+    /** The shipped default for what one block beside a struck face is worth against one block behind it. */
+    public static final double BACKING_BESIDE = 0.25;
 
     /**
      * The share of its neighbours' support a block has, from nothing at all to fully buried.
      *
      * <p>Depth carries most of it because that is the direction the load actually travels. The lateral four
-     * are worth a quarter each so that one block in a wall does not read the same as one hung in the air -
+     * are worth a fraction each so that one block in a wall does not read the same as one hung in the air -
      * a wall is held together, it is just not held up.
      */
-    public static double support(final int behind, final int beside) {
-        return Math.clamp((behind + beside * BACKING_BESIDE) / (BACKING_REACH + 1.0), 0.0, 1.0);
+    public static double support(final int behind, final int beside,
+                                 final int reach, final double besideWeight) {
+        return Math.clamp((behind + beside * besideWeight) / (Math.max(1, reach) + 1.0), 0.0, 1.0);
     }
 
     /**

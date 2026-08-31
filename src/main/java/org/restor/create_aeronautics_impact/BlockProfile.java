@@ -60,6 +60,7 @@ public record BlockProfile(int generation,
     private static BlockProfile build(final int generation,
                                       final BlockGetter level, final BlockPos pos, final BlockState state) {
         final ImpactConfig.Tuning tuning = ImpactConfig.tuning();
+        final MaterialOverrides.Rule rule = MaterialOverrides.of(state);
         final double blastResistance = state.getBlock().getExplosionResistance();
 
         final double raw = ImpactResolver.resistance(
@@ -70,16 +71,21 @@ public record BlockProfile(int generation,
         final boolean emptyShape = !air && state.getCollisionShape(level, pos).isEmpty();
         // Only a block that is nothing but fluid. A waterlogged stair still has its stair to answer for.
         final boolean fluid = emptyShape && !state.getFluidState().isEmpty();
+        // A block the config has called soft is one hulls are meant to go through, so it also gives up the
+        // collider that would otherwise stop them - being swept away by something you have already bounced
+        // off is not what anybody meant by it.
+        final boolean soft = !air && rule.soft(emptyShape && !fluid);
 
         return new BlockProfile(
                 generation,
-                ImpactResolver.compress(raw, tuning.resistanceExponent()),
-                blastResistance >= tuning.indestructibleResistance() || Double.isInfinite(raw),
-                isFragile(state),
-                !air && emptyShape && !fluid,
+                rule.resistance(ImpactResolver.compress(raw, tuning.resistanceExponent())),
+                rule.indestructible(
+                        blastResistance >= tuning.indestructibleResistance() || Double.isInfinite(raw)),
+                rule.fragile(isFragile(state)),
+                soft,
                 fluid,
-                !air && (!emptyShape || state.getBlock() instanceof MovingPistonBlock),
-                !air && state.isCollisionShapeFullBlock(level, pos));
+                !air && !soft && (!emptyShape || state.getBlock() instanceof MovingPistonBlock),
+                !air && !soft && state.isCollisionShapeFullBlock(level, pos));
     }
 
     /**
