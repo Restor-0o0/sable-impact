@@ -694,6 +694,9 @@ public final class HullSweeper {
                     tuning.referencePressure(), tuning.massSensitivity(),
                     tuning.massFactorMin(), tuning.massFactorMax());
 
+            final double kinetic = ImpactResolver.shockKinetic(mass, speed, tuning.shockKineticScale());
+            final int bodyId = subLevel.getRuntimeId();
+
             for (int index = 0; index < hits.size(); index++) {
                 // The deadline only, not the block cap: the cap was already spent gathering these hits, and
                 // a pass that finds what the hull is about to go through and then refuses to break any of it
@@ -734,7 +737,7 @@ public final class HullSweeper {
                     // debris is spawned at the terrain block instead, which is where the crash looks like it
                     // happened - the hull block itself is out in the plot grid.
                     if (PendingBreaks.queue(level, plot, hullState, origin, speed,
-                            face.resistance(), overshoot(speed, face), true)) {
+                            face.resistance(), overshoot(speed, face), true, bodyId, kinetic)) {
                         PendingBreaks.wear(level, pos, state, origin, speed, side.resistance(),
                                 ImpactResolver.wear(side, face) * wearShare, false);
                         momentum += tuning.breakDragMass() * speed;

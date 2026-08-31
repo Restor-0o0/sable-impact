@@ -551,11 +551,12 @@ public final class ImpactConfig {
             .defineInRange("minOvershoot", 2.0, 1.0, 1000.0);
 
     public static final ModConfigSpec.DoubleValue HULL_SHOCK_SCALE = BUILDER
-            .comment("Energy a contraption's own blocks pass on per unit of overshoot past minOvershoot. This",
-                    "is the main dial for how thoroughly a build comes apart: at 0 a hull only ever loses its",
-                    "contact face, and every point of it is roughly one more block of hull the average wave",
-                    "gets through. A build made of something soft spends less per block, so the same number",
-                    "goes much further through a wooden ship than through a stone one.")
+            .comment("Contact-side energy a contraption's own blocks pass on per unit of overshoot past",
+                    "minOvershoot. A wave gets the larger of this and what kineticScale below makes of the",
+                    "whole body, so on any real crash the kinetic answer is in charge and this one decides",
+                    "the small end: a wing clipping a tower, one block driven into a wall. A build made of",
+                    "something soft spends less per block, so the same number goes much further through a",
+                    "wooden ship than through a stone one.")
             .defineInRange("hullScale", 8.0, 0.0, 1000.0);
 
     public static final ModConfigSpec.DoubleValue TERRAIN_SHOCK_SCALE = BUILDER
@@ -566,6 +567,21 @@ public final class ImpactConfig {
                     "contacts only.")
             .defineInRange("terrainScale", 1.5, 0.0, 1000.0);
 
+    public static final ModConfigSpec.DoubleValue SHOCK_KINETIC_SCALE = BUILDER
+            .comment("Shock energy per kilojoule the striking body is actually carrying, which is the number",
+                    "that decides whether a crash is survivable. hullScale prices a shock off one contact,",
+                    "and one contact is a poor witness: a hull that comes down on a corner reports that",
+                    "corner, and the solver stops the whole body dead before its remaining ten thousand",
+                    "blocks touch anything - so the corner is all that ever breaks, however big and however",
+                    "fast the thing was. Kinetic energy knows the difference. It is quadratic in speed, it",
+                    "counts the whole build rather than the part that touched first, and it is drawn from",
+                    "once per body per tick so a landing that reports six hundred contacts is still one",
+                    "crash. Sable weighs a block at one or two kilograms, so a four-thousand-block stone",
+                    "ship is about eight tonnes: at 1.0 it survives a landing at twelve metres a second",
+                    "missing a tenth of itself, and arrives at sixty as a heap. 0 leaves shocks priced on",
+                    "the contact alone, which is the 1.2.0 behaviour.")
+            .defineInRange("kineticScale", 1.0, 0.0, 1.0E6);
+
     public static final ModConfigSpec.DoubleValue SHOCK_COST = BUILDER
             .comment("What one block's resistance costs the wave passing through it. Higher makes material",
                     "matter more: an obsidian bulkhead stops a wave that ran the length of a wooden deck.",
@@ -573,23 +589,28 @@ public final class ImpactConfig {
             .defineInRange("cost", 1.0, 0.0, 100.0);
 
     public static final ModConfigSpec.DoubleValue SHOCK_FALLOFF = BUILDER
-            .comment("What the wave keeps for every block it travels, regardless of material. This is the one",
-                    "that bounds it: cost alone cannot, because a wave crossing something that costs nothing",
-                    "would never stop. At 0.9 a wave is down to a tenth of itself after twenty blocks; at",
-                    "0.99 it carries almost undiminished and is held back by the ceilings alone.")
-            .defineInRange("falloff", 0.94, 0.1, 1.0);
+            .comment("The share of its purchasing power a wave keeps for every block it travels. A block one",
+                    "step out costs its material; one fifty steps out costs that divided by falloff fifty",
+                    "times over. This is what keeps a large crash from being spent arbitrarily far from",
+                    "where it happened: the wreck levels what is near it before it reaches for what is far.",
+                    "At 0.98 a hundred-block hull still comes apart end to end on a bad enough fall; at 0.9",
+                    "the damage stays within about twenty blocks of the impact whatever the fall was.")
+            .defineInRange("falloff", 0.98, 0.1, 1.0);
 
     public static final ModConfigSpec.IntValue SHOCK_MAX_PER_IMPACT = BUILDER
-            .comment("Ceiling on blocks one shock may break before it is called finished. A wave spreads in",
-                    "every direction at once, so what it reaches grows as the cube of how far it got and this",
-                    "cap is normally what ends a big one rather than the energy running out.")
-            .defineInRange("maxBlocksPerImpact", 384, 0, 65536);
+            .comment("Ceiling on blocks one shock may break over its whole life. A wave that runs into the",
+                    "per-tick ceiling below is not cancelled, it is put down and picked up on the next tick,",
+                    "so this is a total and not a rate: it is what stops a single crash from being allowed to",
+                    "eat an unbounded amount, however many ticks it is given.")
+            .defineInRange("maxBlocksPerImpact", 8192, 0, 262144);
 
     public static final ModConfigSpec.IntValue SHOCK_MAX_PER_TICK = BUILDER
             .comment("Ceiling on blocks all shocks together may break per level per tick. A hull landing flat",
                     "reports hundreds of contacts in one tick and every one of them may send a wave, so this",
                     "rather than maxBlocksPerImpact is what stands between a big crash and the tick budget.",
-                    "Separate from maxBlocksPerTick, which counts only what contacts themselves broke.")
+                    "Waves stopped by it resume next tick, so what this really sets is how fast a wreck comes",
+                    "apart rather than how much of it does. Separate from the root maxBlocksPerTick, which",
+                    "counts only what contacts themselves broke.")
             .defineInRange("maxBlocksPerTick", 6144, 0, 262144);
 
     static {
@@ -966,6 +987,7 @@ public final class ImpactConfig {
                          double shockMinOvershoot,
                          double hullShockScale,
                          double terrainShockScale,
+                         double shockKineticScale,
                          double shockCost,
                          double shockFalloff,
                          int shockMaxPerImpact,
@@ -1055,6 +1077,7 @@ public final class ImpactConfig {
                     SHOCK_MIN_OVERSHOOT.get(),
                     HULL_SHOCK_SCALE.get() * Math.max(1.0, strength),
                     TERRAIN_SHOCK_SCALE.get() * Math.max(1.0, strength),
+                    SHOCK_KINETIC_SCALE.get() * Math.max(1.0, strength),
                     SHOCK_COST.get(),
                     SHOCK_FALLOFF.get(),
                     SHOCK_MAX_PER_IMPACT.get(),

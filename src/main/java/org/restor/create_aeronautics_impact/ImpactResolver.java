@@ -394,13 +394,37 @@ public final class ImpactResolver {
      * chip it should chip it, not ring like a bell.
      */
     /**
-     * The least a block may cost a shock passing through it, whatever its material says.
-     *
-     * <p>Falloff alone leaves a wave crossing something free bounded only by where a double stops being a
-     * number, which is some twelve thousand blocks away. This is what makes "the wave runs out" true rather
-     * than merely eventual.
+     * The least a block may cost a shock, whatever its material says. Without it a wave crossing something
+     * free would buy an unbounded number of blocks with any budget at all.
      */
     private static final double SHOCK_FLOOR = 0.05;
+
+    /**
+     * The shock a moving body is worth, from the energy it is actually carrying.
+     *
+     * <p>{@link #shockEnergy} prices a shock off one contact, and one contact is a poor witness to a crash: a
+     * hull that comes down on a single corner reports one contact, breaks what is around it, and is stopped
+     * dead by the solver before its remaining ten thousand blocks touch anything. Nothing about that first
+     * contact knows the difference between a boulder and a battleship, so nothing about the wreck does either.
+     *
+     * <p>The body's kinetic energy does know. It is what the crash actually has to spend, it is quadratic in
+     * speed the way a real one is, and it scales with the whole build rather than with the corner that
+     * happened to touch first - so a huge fast thing comes apart entirely and a small slow one chips.
+     *
+     * <p>Expressed in kilojoules, because Sable weighs a block at one or two kilograms and a whole ship is
+     * therefore a few tonnes: joules would make the scale a number with four leading zeroes, and megajoules
+     * would make every crash in the game round to nothing.
+     */
+    public static double shockKinetic(double mass, double speed, double scale) {
+        if (scale <= 0.0 || mass <= 0.0 || Double.isNaN(mass) || Double.isInfinite(mass)) {
+            return 0.0;
+        }
+        final double v = Math.abs(speed);
+        if (Double.isNaN(v) || Double.isInfinite(v)) {
+            return 0.0;
+        }
+        return scale * 0.5 * mass * v * v / 1.0e3;
+    }
 
     public static double shockEnergy(double overshoot, double minOvershoot, double scale) {
         if (scale <= 0.0 || Double.isNaN(overshoot) || overshoot <= minOvershoot) {
@@ -411,21 +435,22 @@ public final class ImpactResolver {
     }
 
     /**
-     * What a shock has left after passing through one block, or zero if that block stops it.
+     * What one block costs the wave that is breaking it.
      *
-     * <p>Two things take from it and they are not the same thing. The block's own resistance is what breaking
-     * it cost, so a wave crosses a hundred blocks of glass and a handful of obsidian. The falloff is the
-     * distance itself, and it is what keeps a wave finite in a material soft enough to cost nothing - without
-     * it one contact on a wheat field is a wave that never stops.
+     * <p>A shock is a budget, not a signal: the crash has so much to spend, every block it destroys takes its
+     * own resistance out of that, and it stops when it can no longer afford the next one. The alternative -
+     * giving each branch of the wave whatever the last block left it - reads as the more physical of the two
+     * and is not, because a wave that forks six ways hands each fork the whole remainder and so creates
+     * energy at every block it passes. What that costs is not accuracy but control: reach ends up going as
+     * the logarithm of the energy, and a hull dropped from three hundred blocks breaks a third again as much
+     * as one dropped from ten.
      *
-     * @return the energy the block's own neighbours are hit with, or 0 when the block holds and the wave
-     *         ends there.
+     * <p>{@code distance} is what keeps a big budget from being spent arbitrarily far away. Each block out
+     * from the impact costs more than the last, so a wave with a great deal to spend levels what is near it
+     * before it reaches for what is far, and no budget buys unlimited range.
      */
-    public static double shockStep(double energy, double resistance, double cost, double falloff) {
-        final double spent = Math.max(SHOCK_FLOOR, Math.max(0.0, resistance) * Math.max(0.0, cost));
-        if (energy <= spent) {
-            return 0.0;
-        }
-        return (energy - spent) * Math.clamp(falloff, 0.0, 1.0);
+    public static double shockCost(double resistance, double cost, double distance) {
+        final double material = Math.max(0.0, resistance) * Math.max(0.0, cost);
+        return Math.max(SHOCK_FLOOR, material) * Math.max(1.0, distance);
     }
 }

@@ -1,6 +1,8 @@
 package org.restor.create_aeronautics_impact;
 
 import it.unimi.dsi.fastutil.doubles.DoubleArrayFIFOQueue;
+import it.unimi.dsi.fastutil.ints.Int2DoubleMap;
+import it.unimi.dsi.fastutil.ints.Int2DoubleOpenHashMap;
 import it.unimi.dsi.fastutil.longs.LongArrayFIFOQueue;
 import it.unimi.dsi.fastutil.longs.LongOpenHashSet;
 import net.minecraft.core.BlockPos;
@@ -11,37 +13,75 @@ import net.minecraft.world.level.chunk.LevelChunk;
 import org.jetbrains.annotations.Nullable;
 import org.joml.Vector3d;
 
+import java.util.ArrayList;
+import java.util.Iterator;
+import java.util.List;
+import java.util.Map;
+import java.util.WeakHashMap;
+
 /**
  * What a hard enough impact does to the blocks the broken one was attached to.
  *
- * <p>Every other decision in this mod is made about a contact, and a contact is a face. A hull that lands on
- * its belly reports contacts along its belly, so the belly is the only thing that can ever be found to break -
- * which is right for a scrape along a cliff and plainly wrong for a fall, where a stone hull dropped three
- * hundred blocks loses its floor and keeps its walls and looks like it was set down rather than dropped.
+ * <p>Every other decision in this mod is made about a contact, and a contact is a face. A hull that comes
+ * down on one corner reports that corner, breaks what is around it, and is stopped dead by the solver before
+ * the other ten thousand blocks of it touch anything - so without this class the corner is the whole crash,
+ * however big and however fast the thing was.
  *
- * <p>So a break that overshot badly enough hands what it had left over to the blocks around it, and they
- * spend it on their own resistance and pass on the remainder. The wave walks whatever is touching, in the
- * grid it started in - a contraption's plot is surrounded by empty plotgrid, so a wave that begins in a hull
- * cannot leave it, and one that begins in terrain cannot climb into a hull.
+ * <p>So a break hands what the impact had left over to the blocks around it, and they spend it on their own
+ * resistance and pass on the remainder. How much there is to hand over is asked twice: once of the contact,
+ * which is a poor witness to anything larger than itself, and once of the body's kinetic energy, which is
+ * what the crash actually has to spend and knows the difference between a boulder and a battleship. The
+ * larger answer wins, and the kinetic one is drawn from a reservoir refilled once per body per tick, so a
+ * landing that reports six hundred contacts is still one crash.
+ *
+ * <p>The wave walks whatever is touching, in the grid it started in - a contraption's plot is surrounded by
+ * empty plotgrid, so a wave that begins in a hull cannot leave it, and one that begins in terrain cannot
+ * climb into a hull. A wave too big for one tick is put down and picked up on the next, which is both what
+ * keeps the tick honest and what makes a large wreck come apart over a second rather than in a single frame.
  *
  * <p><b>Runs from the level tick, after the physics step</b>, for the same reason breaking does: it writes
  * blocks, and writing a block re-bakes colliders through the library the step is holding.
  */
 public final class ShockWave {
 
+    /** How many unfinished waves one level may be carrying. Past this the oldest are simply dropped. */
+    private static final int MAX_RUNNING = 64;
+
+    private static final Map<ServerLevel, List<ShockWave>> RUNNING = new WeakHashMap<>();
+
     private static long tick = Long.MIN_VALUE;
     private static int brokenThisTick;
 
+    /** What each body has left to spend this tick, so its hundreds of contacts share one crash. */
+    private static final Int2DoubleMap RESERVOIR = new Int2DoubleOpenHashMap();
+
     private final ServerLevel level;
-    private final ImpactConfig.Tuning tuning;
+    private final Vector3d worldImpact;
+    private final double impactVelocity;
+    private final boolean contraption;
+    private final double toughness;
+
     private final LongOpenHashSet seen = new LongOpenHashSet();
     private final LongArrayFIFOQueue frontier = new LongArrayFIFOQueue();
-    private final DoubleArrayFIFOQueue energies = new DoubleArrayFIFOQueue();
+
+    // What a block reached through this one costs, over and above its material. Carried per entry rather
+    // than derived from a depth, because breadth-first order makes it a multiply per block either way.
+    private final DoubleArrayFIFOQueue distances = new DoubleArrayFIFOQueue();
     private final BlockPos.MutableBlockPos cursor = new BlockPos.MutableBlockPos();
 
-    private ShockWave(final ServerLevel level, final ImpactConfig.Tuning tuning) {
+    private double budget;
+    private int broken;
+
+    private ShockWave(final ServerLevel level,
+                      final Vector3d worldImpact,
+                      final double impactVelocity,
+                      final boolean contraption,
+                      final ImpactConfig.Tuning tuning) {
         this.level = level;
-        this.tuning = tuning;
+        this.worldImpact = new Vector3d(worldImpact);
+        this.impactVelocity = impactVelocity;
+        this.contraption = contraption;
+        this.toughness = contraption ? tuning.contraptionBlockToughness() : 1.0;
     }
 
     /**
@@ -49,8 +89,9 @@ public final class ShockWave {
      *
      * @param overshoot how far past its break speed that block was hit, which is the only measure of the hit
      *                  that means the same thing through ice and through obsidian
-     * @param deadline  the break pass's own nanoTime deadline; a wave stops at it and is not resumed, because
-     *                  a shock is a moment and half of one finished a tick later is not that moment
+     * @param bodyId    the striking sub-level, which is what the kinetic reservoir is kept per
+     * @param kinetic   what that body is carrying, already priced in shock energy
+     * @param deadline  the break pass's own nanoTime deadline
      * @return how many blocks the wave broke, for the tick's own count
      */
     public static int spread(final ServerLevel level,
@@ -59,61 +100,131 @@ public final class ShockWave {
                              final double impactVelocity,
                              final double overshoot,
                              final boolean contraption,
+                             final int bodyId,
+                             final double kinetic,
                              final ImpactConfig.Tuning tuning,
                              final long deadline) {
         if (!tuning.shockBlocks()) {
             return 0;
         }
+        rollTick(level.getGameTime());
+
+        // The gate is the contact's, even when the energy is the body's: a battleship resting its weight on
+        // a wall is carrying just as much as one flying into it, and only one of those is a crash.
+        if (overshoot <= tuning.shockMinOvershoot()) {
+            return 0;
+        }
 
         final double scale = contraption ? tuning.hullShockScale() : tuning.terrainShockScale();
-        final double energy = ImpactResolver.shockEnergy(overshoot, tuning.shockMinOvershoot(), scale);
-        if (energy <= 0.0) {
+        final double energy = Math.max(
+                ImpactResolver.shockEnergy(overshoot, tuning.shockMinOvershoot(), scale),
+                draw(bodyId, contraption, kinetic));
+        if (energy <= 0.0 || brokenThisTick >= tuning.shockMaxPerTick()) {
             return 0;
         }
 
-        rollTick(level.getGameTime());
-        if (brokenThisTick >= tuning.shockMaxPerTick()) {
-            return 0;
-        }
-
-        return new ShockWave(level, tuning)
-                .run(origin, worldImpact, impactVelocity, energy, contraption, deadline);
+        final ShockWave wave = new ShockWave(level, worldImpact, impactVelocity, contraption, tuning);
+        wave.budget = energy;
+        wave.seen.add(origin.asLong());
+        wave.frontier.enqueue(origin.asLong());
+        wave.distances.enqueue(1.0);
+        return wave.run(tuning, deadline) ? wave.broken : park(level, wave);
     }
 
     /**
-     * The wave proper: breadth first out of the origin, each block paying its own resistance out of what
-     * reached it and passing the remainder on.
+     * Carries on the waves the last tick ran out of room for, oldest first.
      *
-     * <p>Breadth first rather than by remaining energy, which would be the accurate thing and is not worth a
-     * priority queue per impact: the two only disagree about the order blocks at the same distance go in, and
-     * they all go.
+     * <p>Called before the tick's own breaks rather than after, so a wreck that is still coming apart is not
+     * queued behind whatever it has newly scraped on the way down.
      */
-    private int run(final BlockPos origin,
-                    final Vector3d worldImpact,
-                    final double impactVelocity,
-                    final double energy,
-                    final boolean contraption,
-                    final long deadline) {
-        this.seen.add(origin.asLong());
-        this.frontier.enqueue(origin.asLong());
-        this.energies.enqueue(energy);
+    public static int resume(final ServerLevel level,
+                             final ImpactConfig.Tuning tuning,
+                             final long deadline) {
+        final List<ShockWave> running = RUNNING.get(level);
+        if (running == null || running.isEmpty()) {
+            return 0;
+        }
+        rollTick(level.getGameTime());
 
-        final int perImpact = this.tuning.shockMaxPerImpact();
-        final double toughness = contraption ? this.tuning.contraptionBlockToughness() : 1.0;
         int broken = 0;
-
-        while (!this.frontier.isEmpty()) {
-            if (broken >= perImpact || brokenThisTick >= this.tuning.shockMaxPerTick()) {
-                break;
+        final Iterator<ShockWave> waves = running.iterator();
+        while (waves.hasNext()) {
+            final ShockWave wave = waves.next();
+            final int before = wave.broken;
+            if (!tuning.shockBlocks() || wave.run(tuning, deadline)) {
+                waves.remove();
             }
-            // Once per block rather than once per batch: the wave is bounded by the caps above in the
-            // ordinary case, and by this one when a tick has already spent itself on the contacts.
+            broken += wave.broken - before;
             if (System.nanoTime() > deadline) {
                 break;
             }
+        }
+        if (running.isEmpty()) {
+            RUNNING.remove(level);
+        }
+        return broken;
+    }
+
+    /**
+     * Takes a body's kinetic energy out of the reservoir, which is refilled the first time it is asked each
+     * tick. A crash reports its contacts in the hundreds and they are all the same crash; without this every
+     * one of them would be worth the whole body's energy over again.
+     *
+     * <p>The hull and the ground each get a draw of their own, because they are two different things the same
+     * crash does. Sharing one would make it a race - the ship that levelled the hill it landed on would come
+     * away without a scratch, purely because the ground's contact happened to be reported first.
+     */
+    private static double draw(final int bodyId, final boolean contraption, final double kinetic) {
+        if (kinetic <= 0.0) {
+            return 0.0;
+        }
+        final int key = bodyId * 2 + (contraption ? 1 : 0);
+        final double left = RESERVOIR.getOrDefault(key, kinetic);
+        RESERVOIR.put(key, 0.0);
+        return left;
+    }
+
+    /**
+     * Keeps an unfinished wave for the next tick.
+     *
+     * @return what it broke this tick, so the caller counts it either way.
+     */
+    private static int park(final ServerLevel level, final ShockWave wave) {
+        final List<ShockWave> running = RUNNING.computeIfAbsent(level, ignored -> new ArrayList<>());
+        // A crash that outruns this is one where the oldest waves have long since covered the ground the
+        // newest are still working through, so the newest are the ones worth keeping.
+        while (running.size() >= MAX_RUNNING) {
+            running.remove(0);
+        }
+        running.add(wave);
+        return wave.broken;
+    }
+
+    /**
+     * The wave proper: breadth first out of its frontier, every block it destroys taken out of one budget
+     * they all share, until it can no longer afford the next.
+     *
+     * <p>Breadth first is what makes the shared budget behave: it spends on what is nearest the impact first
+     * and only reaches further once that is gone, which is both the right picture and the reason the cost of
+     * distance below is enough to bound it.
+     *
+     * @return whether the wave is finished, as opposed to merely out of time or out of tick.
+     */
+    private boolean run(final ImpactConfig.Tuning tuning, final long deadline) {
+        final int perImpact = tuning.shockMaxPerImpact();
+        final double falloff = Math.clamp(tuning.shockFalloff(), 0.1, 1.0);
+
+        while (!this.frontier.isEmpty()) {
+            if (this.broken >= perImpact || this.budget <= 0.0) {
+                return true;
+            }
+            if (brokenThisTick >= tuning.shockMaxPerTick() || System.nanoTime() > deadline) {
+                return false;
+            }
 
             final long from = this.frontier.dequeueLong();
-            final double carried = this.energies.dequeueDouble();
+            final double distance = this.distances.dequeueDouble();
+            final double further = distance / falloff;
 
             for (final Direction direction : Direction.values()) {
                 this.cursor.set(BlockPos.getX(from), BlockPos.getY(from), BlockPos.getZ(from));
@@ -123,23 +234,24 @@ public final class ShockWave {
                     continue;
                 }
 
-                final double left = strike(this.cursor, carried, toughness, worldImpact,
-                        impactVelocity, contraption);
-                if (left <= 0.0) {
+                if (!strike(this.cursor, distance, tuning)) {
                     continue;
                 }
-                broken++;
+                this.broken++;
                 brokenThisTick++;
                 this.frontier.enqueue(key);
-                this.energies.enqueue(left);
+                this.distances.enqueue(further);
 
-                if (broken >= perImpact || brokenThisTick >= this.tuning.shockMaxPerTick()) {
-                    return broken;
+                if (this.broken >= perImpact || this.budget <= 0.0) {
+                    return true;
+                }
+                if (brokenThisTick >= tuning.shockMaxPerTick()) {
+                    return false;
                 }
             }
         }
 
-        return broken;
+        return true;
     }
 
     /**
@@ -149,40 +261,35 @@ public final class ShockWave {
      * without being touched. A shock is carried by what is solid; letting it cross a lake would have one
      * contact on a shoreline take the far bank as well.
      *
-     * @return the energy this block's own neighbours are hit with, or 0 when the wave stops here.
+     * @return whether the block was destroyed, and so whether the wave carries on through it.
      */
-    private double strike(final BlockPos pos,
-                          final double energy,
-                          final double toughness,
-                          final Vector3d worldImpact,
-                          final double impactVelocity,
-                          final boolean contraption) {
+    private boolean strike(final BlockPos pos, final double distance, final ImpactConfig.Tuning tuning) {
         final BlockState state = stateIfLoaded(pos);
         if (state == null || state.isAir()) {
-            return 0.0;
+            return false;
         }
 
         final BlockProfile profile = BlockProfile.of(this.level, pos, state);
         if (profile.indestructible() || profile.passable()) {
-            return 0.0;
+            return false;
         }
 
-        final double resistance = profile.resistance() * toughness;
-        final double left = ImpactResolver.shockStep(
-                energy, resistance, this.tuning.shockCost(), this.tuning.shockFalloff());
-        if (left <= 0.0) {
-            return 0.0;
+        final double price = ImpactResolver.shockCost(
+                profile.resistance() * this.toughness, tuning.shockCost(), distance);
+        if (price > this.budget) {
+            return false;
         }
+        this.budget -= price;
 
         final BlockPos broken = pos.immutable();
-        if (contraption) {
-            BlockScatter.shatterContraptionBlock(this.level, broken, state, worldImpact,
-                    impactVelocity, profile.resistance());
+        if (this.contraption) {
+            BlockScatter.shatterContraptionBlock(this.level, broken, state, this.worldImpact,
+                    this.impactVelocity, profile.resistance());
         } else {
-            BlockScatter.shatter(this.level, broken, state, worldImpact,
-                    impactVelocity, profile.resistance());
+            BlockScatter.shatter(this.level, broken, state, this.worldImpact,
+                    this.impactVelocity, profile.resistance());
         }
-        return left;
+        return true;
     }
 
     /**
@@ -198,6 +305,7 @@ public final class ShockWave {
         if (now != tick) {
             tick = now;
             brokenThisTick = 0;
+            RESERVOIR.clear();
         }
     }
 }

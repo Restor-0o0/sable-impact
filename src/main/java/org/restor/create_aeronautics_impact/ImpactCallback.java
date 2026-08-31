@@ -173,6 +173,14 @@ public final class ImpactCallback implements BlockSubLevelCollisionCallback {
         final double toughness = tuning.contraptionBlockToughness();
         final double massFactor = massFactor(tuning, hitSubLevel, otherSubLevel, level.getGameTime());
 
+        // What the crash has to spend, as opposed to what this one contact does. Read here because this is
+        // the last moment it is true: the solver resolves the contact at the end of the step and the body
+        // that arrived at sixty metres a second is stopped by the time the break pass sees it.
+        final double kinetic = ImpactResolver.shockKinetic(
+                massOf(otherSubLevel) + (hitSubLevel == null ? 0.0 : massOf(hitSubLevel)),
+                impactVelocity, tuning.shockKineticScale());
+        final int bodyId = otherSubLevel.getRuntimeId();
+
         final double hullBacking = tuning.hullBackingWeight();
         final int hullReach = tuning.hullBackingReach();
 
@@ -214,7 +222,8 @@ public final class ImpactCallback implements BlockSubLevelCollisionCallback {
 
         if (victim == ImpactResolver.Victim.OTHER) {
             if (PendingBreaks.queue(level, otherHitBlockPos, otherState, worldImpact,
-                    impactVelocity, other.resistance(), overshoot(impactVelocity, other), true)) {
+                    impactVelocity, other.resistance(), overshoot(impactVelocity, other), true,
+                    bodyId, kinetic)) {
                 this.destroyedThisTick++;
                 PendingBreaks.wear(level, hitBlockPos, hitState, worldImpact, impactVelocity,
                         hit.resistance(), ImpactResolver.wear(hit, other) * wearShare, hitIsContraption);
@@ -231,7 +240,8 @@ public final class ImpactCallback implements BlockSubLevelCollisionCallback {
                 && ImpactResolver.punchesThrough(impactVelocity, hit.breakSpeed(), tuning.punchThroughRatio());
 
         if (PendingBreaks.queue(level, hitBlockPos, hitState, worldImpact,
-                impactVelocity, hit.resistance(), overshoot(impactVelocity, hit), hitIsContraption)) {
+                impactVelocity, hit.resistance(), overshoot(impactVelocity, hit), hitIsContraption,
+                bodyId, kinetic)) {
             this.destroyedThisTick++;
             if (other != null) {
                 PendingBreaks.wear(level, otherHitBlockPos, otherState, worldImpact, impactVelocity,

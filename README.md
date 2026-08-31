@@ -21,10 +21,10 @@ speed for every block it takes.
   heals if it is left alone.
 - **Boring.** Above a speed threshold the hull cuts a tunnel rather than skidding, giving up a share of its
   momentum for every block removed.
-- **Shock.** A break that overshot badly enough is felt past the block it happened to. The energy left over
-  spreads through whatever the block was attached to, spending each block's resistance as it goes, so a hull
-  dropped from height comes apart instead of losing the floor it landed on. See
-  [Shock](#shock-when-an-impact-is-felt-past-the-block-it-broke).
+- **Shock.** A crash hard enough is felt past the blocks it happened to touch. The striking body's kinetic
+  energy becomes a budget that spreads through whatever the broken block was attached to, spending each
+  block's resistance as it goes, so a hull dropped from height comes apart instead of losing the floor it
+  landed on. See [Shock](#shock-when-an-impact-is-felt-past-the-block-it-broke).
 - **Debris.** Broken blocks are thrown clear as falling blocks and go looking for somewhere to sit when they
   land, instead of vanishing the moment the spot they came down in happens to be taken. See
   [Debris](#debris-what-flies-and-where-it-lands).
@@ -168,11 +168,21 @@ belly reports contacts along its belly and nowhere else, so without this chapter
 that can ever break - however far the thing fell. That is right for a scrape along a cliff and plainly wrong
 for a drop: a stone hull that falls three hundred blocks does not lose its floor and keep its walls.
 
-A shock is what the contact had left over once it had broken its own block. It is handed to the blocks around
-that one, spreads through whatever is touching, pays each block's resistance out of itself as it goes, and
-dies when there is nothing left. It stays in the grid it started in - a contraption's plot is surrounded by
-empty plotgrid, so a wave that begins in a hull cannot leave it, and one that begins in terrain cannot climb
-into a hull.
+A shock is a *budget*. The crash has so much to spend; every block it destroys takes its own resistance out of
+that, and it stops when it can no longer afford the next one. The wave spreads out from the break through
+whatever is touching, nearest blocks first, and stays in the grid it started in - a contraption's plot is
+surrounded by empty plotgrid, so a wave that begins in a hull cannot leave it, and one that begins in terrain
+cannot climb into a hull.
+
+Where the budget comes from is the important part, and it is asked twice. Once of the contact, which knows how
+hard *this* face was hit and nothing else. And once of the striking body's kinetic energy - half its mass
+times its speed squared - which is what the crash actually has to spend and which knows the difference between
+a boulder and a battleship. The larger answer wins. The kinetic one is drawn from a reservoir refilled once
+per body per tick, so a landing that reports six hundred contacts is still one crash and not six hundred of
+them; the hull and the ground each get a draw, because wrecking both is what one crash does.
+
+A wave too big for one tick is put down and picked up on the next, so a large wreck comes apart over about a
+second rather than in a single frame.
 
 This is the most destructive thing in the mod. The ceilings at the end of this chapter are not decoration.
 
@@ -184,9 +194,10 @@ Every setting named here lives in the `[shock]` section of the config file.
 	minOvershoot = 2.0
 	hullScale = 8.0
 	terrainScale = 1.5
+	kineticScale = 1.0
 	cost = 1.0
-	falloff = 0.94
-	maxBlocksPerImpact = 384
+	falloff = 0.98
+	maxBlocksPerImpact = 8192
 	maxBlocksPerTick = 6144
 ```
 
@@ -196,44 +207,52 @@ Every setting named here lives in the `[shock]` section of the config file.
 ratio. At the default of `2.0` a block broken by an impact going twice the speed it takes to break it sends
 nothing; at three times it starts to.
 
-This is the setting that separates a crash from ordinary use. Ploughing a hillside, scraping a wall, settling
-onto the ground - all of those break blocks, and all of them are meant to leave the rest of the build alone.
-Raise `minOvershoot` and only outright crashes propagate. Lower it towards `1` and every block broken anywhere
-sends a wave through whatever it was attached to, which is a build that sheds hull every time it brushes a
-tree.
+This is the setting that separates a crash from ordinary use, and it gates the kinetic budget as well as the
+contact one - a battleship resting its weight against a wall is carrying just as much energy as one flying
+into it, and only one of those is a crash. Ploughing a hillside, scraping a wall, settling onto the ground:
+all of those break blocks, and all of them are meant to leave the rest of the build alone. Raise
+`minOvershoot` and only outright crashes propagate. Lower it towards `1` and every block broken anywhere sends
+a wave through whatever it was attached to, which is a build that sheds hull every time it brushes a tree.
 
 `shockBlocks = false` turns the whole chapter off. Only blocks actually in contact ever break then, which is
 cheap, entirely predictable, and leaves a hull that hits the ground at terminal velocity looking like it was
 set down on it.
 
-### How much is passed on
+### How much there is to spend
 
-`hullScale` and `terrainScale` are the energy sent per unit of overshoot past `minOvershoot`. They are two
-numbers because they are two different wishes.
+`kineticScale` is the one that scales with the crash. It is shock energy per kilojoule the striking body is
+actually carrying, and it is what makes a big fast thing come apart entirely where a small slow one chips.
+Sable weighs a plain block at one kilogram and stone at two, so a four-thousand-block stone ship is about
+eight tonnes: at the default `1.0` it survives a landing at twelve metres a second missing a few hundred
+blocks, and arrives at sixty as a heap. Set it to `0` and shocks are priced on the contact alone.
 
-`hullScale` is the main dial for how thoroughly a build comes apart, and the one to reach for first if
-structures still feel too solid. At `0` a hull only ever loses its contact face. Every point of it is roughly
-one more block of hull the average wave gets through, so the default of `8.0` is a wave that crosses a few
-dozen blocks of stone on a bad landing and most of a wooden deck.
+`hullScale` and `terrainScale` are the contact-side price, in energy per unit of overshoot past
+`minOvershoot`. They are what decides a crash too small for its kinetic energy to matter - a wing clipping a
+tower, a single block driven into a wall - and they are two numbers because those are two different wishes.
+`hullScale` is how much of itself a build loses that way; `terrainScale` is the same for the world's blocks
+and is kept low, because a wave that keeps going through terrain is a hull digging itself a tunnel.
 
-`terrainScale` is the same for the world's own blocks, and is kept low by default. A crash that takes a bite
-out of a hillside is a crater; one that keeps going is a hull that has dug itself a tunnel and a landscape
-that does not come back. Raise it for demolition, set it to `0` to leave terrain reading contacts only.
+The larger of the two answers is what the wave gets, so on any real crash `kineticScale` is the one in charge
+and the other two only matter at the small end. **If structures are still too solid, raise `kineticScale`.**
 
-Note that `impactStrength` multiplies both, so the shock keeps step with everything else when that dial moves.
+`impactStrength` multiplies all three, so the shock keeps step with everything else when that dial moves.
 
 ### How far it travels
 
-Two things take from a wave, and they are not the same thing.
+`cost` is what one block's resistance costs the budget. Higher makes material matter more: an obsidian
+bulkhead eats a wave that would have run the length of a wooden deck. Lower makes every material come apart
+alike, and the crash is priced by size alone.
 
-`cost` is what one block's resistance costs the wave passing through it. Higher makes material matter more: an
-obsidian bulkhead stops a wave that ran the length of a wooden deck. Lower makes the shock care about distance
-alone, and every material comes apart alike.
+`falloff` is the share of its purchasing power a wave keeps for every block it travels. A block one step out
+costs its material; one fifty steps out costs that same material divided by `falloff` fifty times over. This
+is what keeps a large crash from being spent arbitrarily far from where it happened - the wreck levels what is
+near it before it reaches for what is far, and no budget buys unlimited range. At the default `0.98` a
+hundred-block hull still comes apart end to end on a bad enough fall; at `0.9` the damage stays within about
+twenty blocks of the impact whatever the fall was.
 
-`falloff` is what the wave keeps for every block it travels, regardless of material, and it is the one that
-bounds it - `cost` alone cannot, because a wave crossing something that costs nothing would never stop. At the
-default `0.94` a wave is down to a tenth of itself after about forty blocks. At `0.99` it carries almost
-undiminished and is held back by the ceilings alone.
+Because a wave spreads in every direction at once, what it can reach grows as the cube of how far it got. A
+budget that buys a straight run of two hundred blocks levels a sphere of some eight thousand, which is why
+these two numbers move the result much harder than they look like they should.
 
 A block that is passable - undergrowth, water - ends that branch of the wave without being touched. A shock is
 carried by what is solid; letting it cross a lake would have one contact on a shoreline take the far bank
@@ -241,24 +260,26 @@ with it.
 
 ### What it is allowed to cost
 
-`maxBlocksPerImpact` is the ceiling on what one shock may break before it is called finished. A wave spreads
-in every direction at once, so what it reaches grows as the cube of how far it got, and this cap is normally
-what ends a big one rather than the energy running out.
+`maxBlocksPerImpact` is the ceiling on what one shock may break before it is called finished. At the default
+`8192` it is deliberately out of the way of anything but a genuinely enormous wreck; lower it if you want the
+energy budget overruled by a flat number.
 
 `maxBlocksPerTick` is the ceiling on what all shocks together may break per level per tick, and on a real
 crash it is this rather than `maxBlocksPerImpact` that stands between the impact and the tick budget: a hull
 landing flat reports hundreds of contacts in one tick and every one of them may send a wave. It is counted
 separately from the root `maxBlocksPerTick`, which counts only what the contacts themselves broke.
 
-Shocks also run under the same `maxTickMillis` deadline as the rest of the break pass, and unlike a queued
-break a shock cut short by it is not resumed on the next tick. A shock is a moment; half of one, a tick later,
-is not that moment.
+Shocks also run under the same `maxTickMillis` deadline as the rest of the break pass. Unlike the 1.2.0
+behaviour, a wave cut short by either ceiling is *not* thrown away: it is kept and carried on next tick, up to
+sixty-four waves per level at a time. That is what lets a large crash spend its whole budget without spending
+it all in one frame.
 
 ### If structures are still too solid
 
-In order: raise `hullScale`, lower `minOvershoot` towards `2.0` or below, raise `falloff` towards `0.99`, then
-raise `maxBlocksPerImpact`. If the crash is clearly breaking far more than shows up, the cap that is biting is
-`maxBlocksPerTick` here or `maxTickMillis` at the root.
+In order: raise `kineticScale`, raise `falloff` towards `0.99`, lower `cost`, then lower `minOvershoot`. If
+the crash is clearly breaking far more than shows up, the cap that is biting is `maxBlocksPerTick` here or
+`maxTickMillis` at the root - and because waves resume now, the symptom of that is a wreck that comes apart
+slowly rather than one that stops half-done.
 
 Bear in mind that a shock only starts where a contact already broke something. If nothing at all is breaking,
 this chapter is not the problem - see [Where to start](#where-to-start).
@@ -424,11 +445,12 @@ Section `[shock]`. See [Shock](#shock-when-an-impact-is-felt-past-the-block-it-b
 |---|---|---|
 | `shockBlocks` | `true` | Whether an impact is felt past the block it broke at all. |
 | `minOvershoot` | `2.0` | How far past a block's break speed an impact has to be before it sends a shock, as a ratio. |
-| `hullScale` | `8.0` | Energy a contraption's own blocks pass on per unit of overshoot past `minOvershoot`. The main dial for how thoroughly a build comes apart. |
+| `hullScale` | `8.0` | Contact-side energy a contraption's own blocks pass on per unit of overshoot past `minOvershoot`. Decides the crashes too small for kinetic energy to matter. |
 | `terrainScale` | `1.5` | The same for the world's own blocks. Kept low: a wave that keeps going through terrain is a tunnel. |
-| `cost` | `1.0` | What one block's resistance costs the wave passing through it. Higher makes material matter more. |
-| `falloff` | `0.94` | What the wave keeps for every block it travels, regardless of material. What bounds it. |
-| `maxBlocksPerImpact` | `384` | Ceiling on blocks one shock may break. |
+| `kineticScale` | `1.0` | Energy per kilojoule the striking body is carrying. The main dial for how thoroughly a build comes apart. |
+| `cost` | `1.0` | What one block's resistance costs the budget. Higher makes material matter more. |
+| `falloff` | `0.98` | The share of its purchasing power a wave keeps per block travelled. What bounds its reach. |
+| `maxBlocksPerImpact` | `8192` | Ceiling on blocks one shock may break. |
 | `maxBlocksPerTick` | `6144` | Ceiling on blocks all shocks together may break per level per tick. |
 
 ### Crushing
@@ -565,7 +587,7 @@ without opening it:
 ./gradlew build -Pbuild_variant=fast
 ```
 
-→ `create_aeronautics_impact-1.2.0-fast.jar`, listed as *Create Aeronautics Impact (Fast)*. Same mod id and
+→ `create_aeronautics_impact-1.2.1-fast.jar`, listed as *Create Aeronautics Impact (Fast)*. Same mod id and
 same version, so only one variant can be installed at a time.
 
 For a release, build every variant in one run:

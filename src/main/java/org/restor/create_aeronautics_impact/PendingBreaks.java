@@ -45,7 +45,9 @@ public final class PendingBreaks {
                          double impactVelocity,
                          double resistance,
                          double overshoot,
-                         boolean contraption) {
+                         boolean contraption,
+                         int bodyId,
+                         double kinetic) {
     }
 
     /**
@@ -95,13 +97,15 @@ public final class PendingBreaks {
                                 final double impactVelocity,
                                 final double resistance,
                                 final double overshoot,
-                                final boolean contraption) {
+                                final boolean contraption,
+                                final int bodyId,
+                                final double kinetic) {
         final Bucket bucket = LEVELS.computeIfAbsent(level, ignored -> new Bucket());
         if (!bucket.claimed.add(pos.asLong())) {
             return false;
         }
         bucket.breaks.add(new Break(pos.immutable(), state, new Vector3d(worldImpact),
-                impactVelocity, resistance, overshoot, contraption));
+                impactVelocity, resistance, overshoot, contraption, bodyId, kinetic));
         return true;
     }
 
@@ -161,14 +165,17 @@ public final class PendingBreaks {
         }
         CrackTracker.tick(level, tuning);
 
-        final Bucket bucket = LEVELS.remove(level);
-        if (bucket == null) {
-            return;
-        }
-
         final long started = System.nanoTime();
         final long deadline = started + (long) (ImpactConfig.MAX_TICK_MILLIS.get() * 1.0e6);
-        int broken = 0;
+        int broken = ShockWave.resume(level, tuning, deadline);
+
+        final Bucket bucket = LEVELS.remove(level);
+        if (bucket == null) {
+            if (timed) {
+                ImpactStats.addBreaks(System.nanoTime() - started, broken);
+            }
+            return;
+        }
 
         int next = 0;
         while (next < bucket.breaks.size()) {
@@ -190,7 +197,8 @@ public final class PendingBreaks {
             CrackTracker.spall(level, pending.pos, visible, tuning);
             broken++;
             broken += ShockWave.spread(level, pending.pos, pending.impact, pending.impactVelocity,
-                    pending.overshoot, pending.contraption, tuning, deadline);
+                    pending.overshoot, pending.contraption, pending.bodyId, pending.kinetic,
+                    tuning, deadline);
         }
 
         final Iterator<Wear> pendingWear = bucket.worn.values().iterator();
