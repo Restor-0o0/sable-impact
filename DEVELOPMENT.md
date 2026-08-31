@@ -41,7 +41,7 @@ Sable solver step
   └─ BlockMixin.sable$getCallback  ──▶ ImpactCallback (claimed for every block in the game)
        └─ ImpactCallback.collide
             ├─ BlockProfile.of(state)      what each side is made of  (cached per BlockState)
-            ├─ Backing.of(level, pos)      what is holding the terrain up
+            ├─ Backing.of(level, pos)      what is holding each side up, on its own weight
             ├─ ContactTracker              how many blocks this hull has on the ground
             └─ ImpactResolver.victim(...)  ──▶ which side loses
                  └─ PendingBreaks.queue / .wear / .drag        (written down, not applied)
@@ -78,7 +78,7 @@ pass is stopped by it exactly once instead of finding the ground gone mid-step.
 |---|---|
 | `BlockProfile.java` | Everything the mod needs to know about a block state, derived once and cached on the state. |
 | `MaterialOverrides.java` | The `materialOverrides` config table, parsed, and the rule lookup for one state. |
-| `Backing.java` | How much terrain stands behind and beside a struck face. Memoised, read from the physics thread. |
+| `Backing.java` | How much material stands behind and beside a struck face, in the world or in a hull's own plot. Memoised, read from the physics thread. |
 | `PlotProbe.java` | "Is this point inside one of the hull's blocks?" — the single most repeated question in the mod. |
 | `ProfileHolder.java` | The interface `BlockStateProfileMixin` implements, so a state can hold its own profile. |
 

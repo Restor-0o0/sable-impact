@@ -45,6 +45,7 @@ public final class ImpactCallback implements BlockSubLevelCollisionCallback {
     private static final int PLOT_CACHE = 8;
 
     private final ContactTracker contacts = new ContactTracker();
+    private final Vector3d otherLocal = new Vector3d();
     private final long[] plotKeys = new long[PLOT_CACHE];
     private final ServerSubLevel[] plots = new ServerSubLevel[PLOT_CACHE];
 
@@ -172,29 +173,42 @@ public final class ImpactCallback implements BlockSubLevelCollisionCallback {
         final double toughness = tuning.contraptionBlockToughness();
         final double massFactor = massFactor(tuning, hitSubLevel, otherSubLevel, level.getGameTime());
 
-        // A contraption is one rigid body and its blocks really are holding each other up, so only terrain
-        // is asked what is behind it.
+        final double hullBacking = tuning.hullBackingWeight();
+        final int hullReach = tuning.hullBackingReach();
+
+        // Both sides are asked what is behind them; only how much the answer is worth differs, and a
+        // contraption asks in its own plot space because that is where its neighbours are.
         final double backing = hitIsContraption
-                ? 1.0
+                ? Backing.of(level, hitBlockPos, impactPosition.x, impactPosition.y, impactPosition.z,
+                        hullBacking, hullReach)
                 : Backing.of(level, hitBlockPos, impactPosition.x, impactPosition.y, impactPosition.z);
-
-        final ImpactResolver.Side hit =
-                hitProfile.side(massFactor, hitIsContraption ? toughness : 1.0, backing);
-        final ImpactResolver.Side other = breakContraptions
-                ? BlockProfile.of(level, otherHitBlockPos, otherState).side(massFactor, toughness)
-                : null;
-
-        final ImpactResolver.Victim victim =
-                ImpactResolver.victim(impactVelocity, hit, other, budgetExhausted(tuning));
-        if (victim == ImpactResolver.Victim.NONE) {
-            return CollisionResult.NONE;
-        }
 
         // impactPosition arrives in the plot space of whichever sub-level owns the hit block, and in
         // world space when that block is plain terrain.
         final Vector3d worldImpact = hitSubLevel == null
                 ? impactPosition
                 : hitSubLevel.logicalPose().transformPosition(impactPosition, new Vector3d());
+
+        final ImpactResolver.Side hit =
+                hitProfile.side(massFactor, hitIsContraption ? toughness : 1.0, backing);
+        final ImpactResolver.Side other;
+        if (breakContraptions) {
+            // The other block is in a different sub-level, so the contact has to be carried into its plot
+            // space before it means anything about which of its neighbours are behind it.
+            otherSubLevel.logicalPose().transformPositionInverse(worldImpact, this.otherLocal);
+            other = BlockProfile.of(level, otherHitBlockPos, otherState).side(massFactor, toughness,
+                    Backing.of(level, otherHitBlockPos,
+                            this.otherLocal.x, this.otherLocal.y, this.otherLocal.z,
+                            hullBacking, hullReach));
+        } else {
+            other = null;
+        }
+
+        final ImpactResolver.Victim victim =
+                ImpactResolver.victim(impactVelocity, hit, other, budgetExhausted(tuning));
+        if (victim == ImpactResolver.Victim.NONE) {
+            return CollisionResult.NONE;
+        }
 
         final double wearShare = tuning.impactWear();
 

@@ -628,6 +628,8 @@ public final class HullSweeper {
         final double mass = massOf(subLevel);
         final boolean breakHull = tuning.breakContraptionBlocks();
         final double toughness = tuning.contraptionBlockToughness();
+        final double hullBacking = tuning.hullBackingWeight();
+        final int hullReach = tuning.hullBackingReach();
         final double wearShare = tuning.impactWear();
         final BlockPos.MutableBlockPos plot = new BlockPos.MutableBlockPos();
         final List<BlockPos> hits = new ArrayList<>();
@@ -712,10 +714,15 @@ public final class HullSweeper {
                 final ImpactResolver.Side side = profile.side(massFactor, 1.0,
                         Backing.of(level, pos, origin.x, origin.y, origin.z));
                 final BlockState hullState = hullStates.get(index);
-                final ImpactResolver.Side face = !breakHull || hullState == null
-                        ? null
-                        : BlockProfile.of(level, plot.set(hullAt.getLong(index)), hullState)
-                                .side(massFactor, toughness);
+                ImpactResolver.Side face = null;
+                if (breakHull && hullState != null) {
+                    // Deeper into the hull is further along the walk that found this block, so the direction
+                    // the sweep was already going is the direction the load goes.
+                    plot.set(hullAt.getLong(index));
+                    face = BlockProfile.of(level, plot, hullState).side(massFactor, toughness,
+                            Backing.along(level, plot, localStep.x(), localStep.y(), localStep.z(),
+                                    hullBacking, hullReach));
+                }
 
                 final ImpactResolver.Victim victim = ImpactResolver.victim(speed, side, face, false);
                 if (victim == ImpactResolver.Victim.NONE) {

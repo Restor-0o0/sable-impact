@@ -12,7 +12,9 @@ speed for every block it takes.
 - **Impact.** Every contact is a two-sided contest between the block struck and the block striking it,
   settled on material strength, closing speed and mass. The loser breaks; the winner takes wear.
 - **Backing.** A block is only as strong as what is behind and beside it. A stone wall one block thick is a
-  pane of stone; the face of a mountain is a mountain. Same material, different answer.
+  pane of stone; the face of a mountain is a mountain. Same material, different answer. Contraptions are
+  read the same way on their own weight, so a hollow shell comes apart at the skin and a solid build does
+  not.
 - **Crushing.** A landed or low-flying hull presses down on what is under it. Weight spreads through the
   ground, thin terrain gives, and blocks squeezed sideways pop out.
 - **Cracking.** Damage that does not finish a block is remembered and shown as vanilla break progress, and
@@ -57,6 +59,8 @@ Four settings between them cover most of what people want to change:
   `contraptionBlockToughness`, because scaling those breaks things rather than tuning them.
 - **`backingWeight`** — how much of a block's strength is on loan from its surroundings. `0` gives every
   block its plain material strength wherever it stands, which makes a garden wall as tough as a cliff.
+  `hullBackingWeight` is the same dial for the contraption's own blocks, and is what decides whether a
+  hollow build lands like the solid one it is shaped like.
 - **`crushBlocks`** — whether weight alone destroys terrain, with no impact needed. Turning it off makes the
   mod purely about collisions and is the single largest saving available.
 - **`maxTickMillis`** — the wall-clock ceiling on everything this mod does per tick. Lower it first if the
@@ -189,9 +193,11 @@ How a block's strength is derived from its vanilla stats, before `materialOverri
 
 | Option | Default | |
 |---|---|---|
-| `backingWeight` | `0.6` | How much of a terrain block's strength is on loan from what holds it in place. Contraptions are exempt. |
+| `backingWeight` | `0.6` | How much of a terrain block's strength is on loan from what holds it in place. |
 | `backingReach` | `3` | How many blocks behind a struck face count towards holding it up. A gap ends the count rather than being skipped. |
 | `backingBeside` | `0.25` | What one block beside a struck face is worth against one block of depth behind it. |
+| `hullBackingWeight` | `0.5` | The same, for a contraption's own blocks. `0` restores the old reading, where every block of a hull was as strong as if the whole build were behind it. |
+| `hullBackingReach` | `3` | How deep a hull has to be packed to land as solid material. Anything thinner than this gives at the skin. |
 
 ### Crushing
 

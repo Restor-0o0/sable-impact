@@ -18,8 +18,10 @@ import java.util.Arrays;
  * <p>A block resists by pushing back, and it can only push back as hard as whatever is behind it lets it:
  * take the mountain away and the same stone is a tile that pops out of its frame.
  *
- * <p>Terrain only. A contraption is one rigid body and its blocks really are carrying each other, so there is
- * nothing here for them to lose.
+ * <p>Terrain and contraptions both, on separate weights. A hull is one rigid body, which is the argument for
+ * saying its blocks are always fully backed - but it is also the reason a hollow build and a solid one of the
+ * same material land identically, which is the wrong answer twice. What is behind a block is the only thing
+ * that tells the two apart.
  *
  * <p>Unloaded chunks and the void outside the world count as solid. Nothing should get weaker because the
  * server happened not to be looking.
@@ -51,14 +53,35 @@ public final class Backing {
      */
     public static double of(final ServerLevel level, final BlockPos pos,
                             final double fromX, final double fromY, final double fromZ) {
-        final double weight = ImpactConfig.tuning().backingWeight();
+        final ImpactConfig.Tuning tuning = ImpactConfig.tuning();
+        return of(level, pos, fromX, fromY, fromZ, tuning.backingWeight(), tuning.backingReach());
+    }
+
+    /**
+     * The same reading on a stated weight and depth, for a block that is part of a contraption rather than
+     * part of the world. The point is in the plot space the block itself lives in, as the world-space one is
+     * for terrain - what differs between the two callers is only how much the answer is allowed to be worth.
+     */
+    public static double of(final ServerLevel level, final BlockPos pos,
+                            final double fromX, final double fromY, final double fromZ,
+                            final double weight, final int reach) {
+        return along(level, pos,
+                pos.getX() + 0.5 - fromX, pos.getY() + 0.5 - fromY, pos.getZ() + 0.5 - fromZ,
+                weight, reach);
+    }
+
+    /**
+     * The reading along a load direction given outright, for callers that know which way the weight is going
+     * without having a point it came from. The sweep is one: it walks a hull's path in the hull's own frame,
+     * so the direction is in hand and the contact point never exists as a position at all.
+     */
+    public static double along(final ServerLevel level, final BlockPos pos,
+                               final double dx, final double dy, final double dz,
+                               final double weight, final int reach) {
         if (weight <= 0.0) {
             return 1.0;
         }
 
-        final double dx = pos.getX() + 0.5 - fromX;
-        final double dy = pos.getY() + 0.5 - fromY;
-        final double dz = pos.getZ() + 0.5 - fromZ;
         final double ax = Math.abs(dx);
         final double ay = Math.abs(dy);
         final double az = Math.abs(dz);
@@ -68,17 +91,19 @@ public final class Backing {
         if (Math.abs(along) < 1.0e-6) {
             return 1.0;
         }
-        return read(level, pos, axis, along > 0.0 ? 1 : -1, weight);
+        return read(level, pos, axis, along > 0.0 ? 1 : -1, weight, reach);
     }
 
     /**
      * The memoised reading for one block and one direction.
      *
      * <p>The key mixes position, axis and sign, so the same block struck from two sides is two answers - it
-     * genuinely has different amounts of terrain behind each face.
+     * genuinely has different amounts of terrain behind each face. Weight and depth are left out of it: a
+     * plot sits tens of thousands of blocks from the world it is flying over, so a position is either a
+     * contraption's or the world's and never both, and the two callers' settings can never meet in a slot.
      */
     private static double read(final ServerLevel level, final BlockPos pos,
-                               final int axis, final int sign, final double weight) {
+                               final int axis, final int sign, final double weight, final int reach) {
         final ImpactConfig.Tuning tuning = ImpactConfig.tuning();
         roll(level, tuning.backingMemoTicks());
 
@@ -89,7 +114,6 @@ public final class Backing {
         }
 
         final BlockPos.MutableBlockPos cursor = new BlockPos.MutableBlockPos();
-        final int reach = tuning.backingReach();
         final double held = ImpactResolver.backed(ImpactResolver.support(
                 behind(level, cursor, pos, axis, sign, reach), beside(level, cursor, pos, axis),
                 reach, tuning.backingBeside()), weight);

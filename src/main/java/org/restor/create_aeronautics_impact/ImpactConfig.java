@@ -349,6 +349,27 @@ public final class ImpactConfig {
                     "four are what keep one block in a wall from reading as free-standing. 0 counts depth alone.")
             .defineInRange("backingBeside", 0.25, 0.0, 1.0);
 
+    public static final ModConfigSpec.DoubleValue HULL_BACKING_WEIGHT = BUILDER
+            .comment("The same reading applied to a contraption's own blocks: how much of one block's strength",
+                    "comes from the rest of the build standing behind it rather than from what it is made of.",
+                    "A hull is one rigid body, which is the argument for exempting it - but it is also the",
+                    "reason a hollow build lands like a solid one. A wooden shell one block thick has nothing",
+                    "behind its skin, and at 0 it meets the ground with the same numbers a wooden cube of the",
+                    "same footprint does: a few blocks go where it touched and the rest rides down intact.",
+                    "Above 0 the skin of a hollow build is the weakest part of it and comes apart first, while",
+                    "a densely packed one is barely touched - which is the difference between the two that the",
+                    "material numbers cannot express.",
+                    "Set to 0 for the old behaviour, where a contraption block is always fully backed. 1 makes a",
+                    "free-standing block worth nothing at all, which is a build made of eggshell.")
+            .defineInRange("hullBackingWeight", 0.5, 0.0, 1.0);
+
+    public static final ModConfigSpec.IntValue HULL_BACKING_REACH = BUILDER
+            .comment("How deep into a build the load is traced before it counts as fully supported. Kept apart",
+                    "from backingReach because the two are asking about different things: terrain is asking",
+                    "whether it is a wall or a hillside, and a build is asking how much of itself is in the way.",
+                    "At 3 a shell three blocks thick lands like solid material and anything thinner gives.")
+            .defineInRange("hullBackingReach", 3, 1, 8);
+
     public static final ModConfigSpec.DoubleValue IMPACT_WEAR = BUILDER
             .comment("What winning an impact costs the winner, as a share of how evenly matched the two sides",
                     "were. Punching through something nearly as strong as you wears you down nearly as fast as",
@@ -786,7 +807,9 @@ public final class ImpactConfig {
                          int maxQuietTicks,
                          int backingMemoTicks,
                          int maxContactsPerTick,
-                         boolean blockUpdates) {
+                         boolean blockUpdates,
+                         double hullBackingWeight,
+                         int hullBackingReach) {
 
         /**
          * Reads the whole spec once, applying {@code impactStrength} to the thresholds it eases on the way.
@@ -857,7 +880,9 @@ public final class ImpactConfig {
                     MAX_QUIET_TICKS.get(),
                     BACKING_MEMO_TICKS.get(),
                     MAX_CONTACTS_PER_TICK.get(),
-                    BLOCK_UPDATES.get());
+                    BLOCK_UPDATES.get(),
+                    HULL_BACKING_WEIGHT.get(),
+                    HULL_BACKING_REACH.get());
         }
 
         /** The lowest speed at which any block, however soft and however heavy the ram, could give way. */

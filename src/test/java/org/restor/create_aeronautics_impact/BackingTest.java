@@ -15,6 +15,10 @@ final class BackingTest {
     private static final double WOOD = 1.025;
     private static final double STONE = 1.449;
 
+    /** What a hull is read on: its own weight, and a depth that makes a three-block shell solid. */
+    private static final double HULL_WEIGHT = 0.5;
+    private static final int HULL_REACH = 3;
+
     private static double support(final int behind, final int beside) {
         return ImpactResolver.support(
                 behind, beside, ImpactResolver.BACKING_REACH, ImpactResolver.BACKING_BESIDE);
@@ -73,5 +77,37 @@ final class BackingTest {
         assertEquals(1.0, ImpactResolver.backed(4.0, WEIGHT), 1.0e-9);
         assertEquals(0.0, ImpactResolver.backed(-1.0, 1.0), 1.0e-9);
         assertEquals(1.0, ImpactResolver.backed(0.0, -1.0), 1.0e-9);
+    }
+
+    private static double hull(final int behind, final int beside) {
+        return ImpactResolver.backed(ImpactResolver.support(
+                behind, beside, HULL_REACH, ImpactResolver.BACKING_BESIDE), HULL_WEIGHT);
+    }
+
+    @Test
+    @DisplayName("the skin of a hollow build is the weakest part of it")
+    void aHollowShellGivesAtTheSkin() {
+        assertEquals(1.0 - HULL_WEIGHT, hull(0, 0), 1.0e-9);
+        assertTrue(hull(0, 4) < hull(1, 4), "a single-layer wall held as well as a two-layer one");
+        assertTrue(hull(0, 4) < 0.7, "a single-layer wall was still nearly solid material");
+    }
+
+    @Test
+    @DisplayName("a build packed to the configured depth lands as the solid thing it is")
+    void aDenseBuildIsAtFullStrength() {
+        assertEquals(1.0, hull(HULL_REACH, 4), 1.0e-9);
+        assertEquals(1.0, hull(HULL_REACH + 2, 4), 1.0e-9);
+    }
+
+    @Test
+    @DisplayName("the two readings differ only by the weight they are given")
+    void hullsAndTerrainShareOneCurve() {
+        for (int behind = 0; behind <= HULL_REACH; behind++) {
+            final double support = ImpactResolver.support(
+                    behind, 4, HULL_REACH, ImpactResolver.BACKING_BESIDE);
+            assertTrue(ImpactResolver.backed(support, HULL_WEIGHT)
+                            >= ImpactResolver.backed(support, WEIGHT),
+                    behind + " deep punished a hull harder than the same terrain");
+        }
     }
 }
