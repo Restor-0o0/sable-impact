@@ -1,6 +1,49 @@
+# Build output
 .gradle/
 build/
+dist/
+bin/
+out/
+local.properties
+
+# Game runtime
 run/
+runs/
+logs/
+*.log
+crash-reports/
+
+# JVM crash dumps
+hs_err_pid*.log
+replay_pid*.log
+*.hprof
+
+# AI assistants and tooling
+.claude/
+.claude.json*
+CLAUDE.md
+.mcp.json
+.cursor/
+.cursorrules
+.aider*
+.github/copilot-instructions.md
+
+# Editors
 .idea/
 *.iml
-dist/
+.vscode/
+.settings/
+.classpath
+.project
+*.swp
+*~
+
+# OS
+.DS_Store
+Thumbs.db
+desktop.ini
+
+# Merge and backup leftovers
+*.orig
+*.rej
+*.bak
