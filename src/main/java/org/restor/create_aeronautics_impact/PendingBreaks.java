@@ -16,6 +16,7 @@ import it.unimi.dsi.fastutil.longs.LongOpenHashSet;
 
 import java.util.ArrayList;
 import java.util.HashMap;
+import java.util.Iterator;
 import java.util.List;
 import java.util.Map;
 import java.util.WeakHashMap;
@@ -79,6 +80,9 @@ public final class PendingBreaks {
     }
 
     private static final Map<ServerLevel, Bucket> LEVELS = new WeakHashMap<>();
+
+    /** How many of each kind of leftover a tick may hand to the next one. */
+    private static final int MAX_CARRIED = 4096;
 
     private PendingBreaks() {
     }
@@ -162,10 +166,16 @@ public final class PendingBreaks {
             return;
         }
 
-        final long started = timed ? System.nanoTime() : 0L;
+        final long started = System.nanoTime();
+        final long deadline = started + (long) (ImpactConfig.MAX_TICK_MILLIS.get() * 1.0e6);
         int broken = 0;
 
-        for (final Break pending : bucket.breaks) {
+        int next = 0;
+        while (next < bucket.breaks.size()) {
+            if (System.nanoTime() > deadline) {
+                break;
+            }
+            final Break pending = bucket.breaks.get(next++);
             if (level.getBlockState(pending.pos) != pending.state) {
                 continue;
             }
@@ -181,7 +191,13 @@ public final class PendingBreaks {
             broken++;
         }
 
-        for (final Wear worn : bucket.worn.values()) {
+        final Iterator<Wear> pendingWear = bucket.worn.values().iterator();
+        while (pendingWear.hasNext()) {
+            if (System.nanoTime() > deadline) {
+                break;
+            }
+            final Wear worn = pendingWear.next();
+            pendingWear.remove();
             // Something already breaking this tick has nothing left to wear down.
             if (bucket.claimed.contains(worn.pos.asLong())
                     || level.getBlockState(worn.pos) != worn.state) {
@@ -198,10 +214,44 @@ public final class PendingBreaks {
         }
 
         applyDrag(bucket.drag);
+        carry(level, bucket, next);
 
         if (timed) {
             ImpactStats.addBreaks(System.nanoTime() - started, broken);
         }
+    }
+
+    /**
+     * Hands whatever the tick ran out of time for to the next one.
+     *
+     * <p>The queue is filled during the physics step and drained after it, so nothing else is holding a
+     * bucket for this level at this point and the leftovers keep their place at the front of it. Carrying
+     * rather than dropping is what makes the deadline above safe to enforce: a block the hull went through
+     * is still broken, one tick later, instead of surviving a hit it should not have.
+     *
+     * <p>Only up to a ceiling, because carrying is a queue and a queue that is filled faster than it drains
+     * is a leak. Past that the oldest are kept and the rest let go - a hull that reports more damage in a
+     * tick than the server can pay out in a tick has already left the block standing whatever this does.
+     */
+    private static void carry(final ServerLevel level, final Bucket bucket, final int from) {
+        final List<Break> breaks = bucket.breaks.subList(
+                from, Math.min(bucket.breaks.size(), from + MAX_CARRIED));
+        if (breaks.isEmpty() && bucket.worn.isEmpty()) {
+            return;
+        }
+
+        final Bucket carried = new Bucket();
+        carried.breaks.addAll(breaks);
+        for (final Break pending : breaks) {
+            carried.claimed.add(pending.pos.asLong());
+        }
+        for (final Wear worn : bucket.worn.values()) {
+            if (carried.worn.size() >= MAX_CARRIED) {
+                break;
+            }
+            carried.worn.put(worn.pos.asLong(), worn);
+        }
+        LEVELS.put(level, carried);
     }
 
     /** Routes to the world or plotgrid break path, which differ in where the debris entity is created. */

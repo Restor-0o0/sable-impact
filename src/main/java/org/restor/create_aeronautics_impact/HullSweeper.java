@@ -204,6 +204,11 @@ public final class HullSweeper {
      * block next door, and it comes out around a millisecond apiece. The carve loop was bounded only by how
      * many blocks it was allowed to break, so a tick that found five hundred of them spent most of a second
      * on them without ever asking the clock. Pricing a break high enough gets it asked.
+     *
+     * <p>The price is what a break costs against the block budget; the clock is read after every one of them
+     * regardless - see {@link Budget#spendBreak()}. A quarter of a stride was still four destroyBlocks
+     * between two readings, and four of them in a pack where one can cascade into a couple of hundred
+     * milliseconds is the quarter-second overrun the log kept showing against a six millisecond limit.
      */
     private static final int BREAK_COST = CLOCK_STRIDE / 4;
 
@@ -565,6 +570,13 @@ public final class HullSweeper {
                         gap = Math.min(gap, floor - surface);
                     }
                 }
+
+                // This runs before a hull has any budget of its own and once per hull per tick, so a fleet
+                // parked over a wide footprint was reading a column apiece for nothing the tick could see.
+                workSinceClock += (x1 - x0 + 1) * (z1 - z0 + 1);
+                if (overtime()) {
+                    return 0;
+                }
             }
         }
 
@@ -720,7 +732,7 @@ public final class HullSweeper {
                                 ImpactResolver.wear(side, face) * wearShare, false);
                         momentum += tuning.breakDragMass() * speed;
                         broken++;
-                        budget.spend(BREAK_COST);
+                        budget.spendBreak();
                     }
                     continue;
                 }
@@ -732,7 +744,7 @@ public final class HullSweeper {
                 }
                 momentum += tuning.breakDragMass() * speed;
                 broken++;
-                budget.spend(BREAK_COST);
+                budget.spendBreak();
 
                 if (boreSpeed > 0.0) {
                     final int sheared = shearWalls(level, pos, axis, wall, origin, velocity, speed,
@@ -1378,7 +1390,7 @@ public final class HullSweeper {
                         .add(wall.getX() + 0.5, wall.getY() + 0.5, wall.getZ() + 0.5);
                 BlockScatter.shatter(level, wall, state, origin, wallSpeed, profile.resistance());
                 budget.cleared++;
-                budget.spend(BREAK_COST);
+                budget.spendBreak();
                 sheared++;
             }
         }
@@ -1386,7 +1398,6 @@ public final class HullSweeper {
         return sheared;
     }
 
-    /** How far past its break speed a side was hit, which is how fast it accumulates damage. */
     /** How far past its break speed the block was hit, which is how fast it accumulates damage. */
     private static double overshoot(final double speed, final ImpactResolver.Side side) {
         final double breakSpeed = side.breakSpeed();
@@ -1979,6 +1990,21 @@ public final class HullSweeper {
             } else {
                 sweptThisTick += amount;
             }
+        }
+
+        /**
+         * Charges one block destruction, and makes the next ask read the clock rather than count towards it.
+         *
+         * <p>A stride is a bargain struck between the cost of reading the clock and the cost of the work
+         * being measured, and a break is on the wrong side of it: it is the one operation here that is
+         * itself worth more than the reading, sometimes by three orders of magnitude, because what a
+         * destroyBlock ends up doing belongs to whatever else in the pack has an opinion about that block.
+         * So it is not averaged in with the block reads - it is measured on its own, and the pass can
+         * overrun by one of them rather than by a strideful.
+         */
+        private void spendBreak() {
+            spend(BREAK_COST);
+            workSinceClock = CLOCK_STRIDE;
         }
 
         /**
