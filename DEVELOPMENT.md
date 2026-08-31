@@ -53,6 +53,7 @@ LevelTickEvent.Post
   │    ├─ CrackTracker.hit / .wear      accumulated damage; may say "not yet"
   │    ├─ BlockScatter.shatter          the block finally leaves the world, as debris or not at all
   │    ├─ CrackTracker.spall            neighbours take a fraction
+  │    ├─ ShockWave.spread              a break that overshot badly enough travels through the body
   │    └─ PendingBreaks.brake           the hull pays for it in speed
   └─ HullSweeper.onLevelTick            everything the solver never reported
 
@@ -96,6 +97,7 @@ pass is stopped by it exactly once instead of finding the ground gone mid-step.
 | `PendingBreaks.java` | The queue between the physics step and the tick, and the hull braking. |
 | `BlockScatter.java` | Removing a block: drops, falling-block debris, particles, and the per-tick rations on all of it. |
 | `CrackTracker.java` | Damage a block carries between impacts, and the vanilla break overlay for it. |
+| `ShockWave.java` | What a break that overshot badly enough does to the blocks around it: a breadth-first wave through the grid it started in, bounded per impact, per tick and by the break pass deadline. |
 | `VoxelClassifier.java` | Sable's per-block collider classification, done faster. Purely an optimisation. |
 | `ContactTracker.java` | Contact-block counts per sub-level, which is the denominator of the whole mass model. |
 
@@ -231,7 +233,7 @@ compiles against Sable 2.0.3 and declares `[2.0.1,3.0.0)`.
 the mod list:
 
 ```
-./gradlew build -Pbuild_variant=fast   →  create_aeronautics_impact-1.1.0-fast.jar
+./gradlew build -Pbuild_variant=fast   →  create_aeronautics_impact-1.2.0-fast.jar
                                           "Create Aeronautics Impact (Fast)"
 ```
 

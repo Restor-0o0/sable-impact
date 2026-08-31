@@ -377,4 +377,55 @@ public final class ImpactResolver {
         }
         return Math.min(excess * scatterVelocityScale, 2.0);
     }
+
+    /**
+     * How much of a shock an impact sends into the body it just broke a block off.
+     *
+     * <p>Everything else in this class decides one contact, and a contact is a face: a hull that lands on its
+     * belly reports contacts along its belly and nowhere else, so the belly is all that can ever break. That
+     * is right for a scrape and wrong for a fall - a stone tube dropped three hundred blocks does not lose
+     * its underside and keep its walls, it comes apart, because the energy does not stay at the face it
+     * arrived through. This is the part that leaves it: what the contact had left over after breaking its own
+     * block, as something the neighbouring blocks then have to absorb.
+     *
+     * <p>Priced off the overshoot rather than the speed, because the overshoot is already the ratio between
+     * what arrived and what the material could take - the same fall through ice and through obsidian is not
+     * the same shock. Below the threshold there is none: a hull nudging a wall at twice the speed it takes to
+     * chip it should chip it, not ring like a bell.
+     */
+    /**
+     * The least a block may cost a shock passing through it, whatever its material says.
+     *
+     * <p>Falloff alone leaves a wave crossing something free bounded only by where a double stops being a
+     * number, which is some twelve thousand blocks away. This is what makes "the wave runs out" true rather
+     * than merely eventual.
+     */
+    private static final double SHOCK_FLOOR = 0.05;
+
+    public static double shockEnergy(double overshoot, double minOvershoot, double scale) {
+        if (scale <= 0.0 || Double.isNaN(overshoot) || overshoot <= minOvershoot) {
+            return 0.0;
+        }
+        final double excess = Math.min(overshoot, 1.0e6) - Math.max(0.0, minOvershoot);
+        return excess * scale;
+    }
+
+    /**
+     * What a shock has left after passing through one block, or zero if that block stops it.
+     *
+     * <p>Two things take from it and they are not the same thing. The block's own resistance is what breaking
+     * it cost, so a wave crosses a hundred blocks of glass and a handful of obsidian. The falloff is the
+     * distance itself, and it is what keeps a wave finite in a material soft enough to cost nothing - without
+     * it one contact on a wheat field is a wave that never stops.
+     *
+     * @return the energy the block's own neighbours are hit with, or 0 when the block holds and the wave
+     *         ends there.
+     */
+    public static double shockStep(double energy, double resistance, double cost, double falloff) {
+        final double spent = Math.max(SHOCK_FLOOR, Math.max(0.0, resistance) * Math.max(0.0, cost));
+        if (energy <= spent) {
+            return 0.0;
+        }
+        return (energy - spent) * Math.clamp(falloff, 0.0, 1.0);
+    }
 }

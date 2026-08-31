@@ -189,6 +189,8 @@ public final class PendingBreaks {
                     pending.resistance, pending.contraption);
             CrackTracker.spall(level, pending.pos, visible, tuning);
             broken++;
+            broken += ShockWave.spread(level, pending.pos, pending.impact, pending.impactVelocity,
+                    pending.overshoot, pending.contraption, tuning, deadline);
         }
 
         final Iterator<Wear> pendingWear = bucket.worn.values().iterator();

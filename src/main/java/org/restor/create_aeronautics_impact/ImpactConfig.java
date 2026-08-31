@@ -523,6 +523,79 @@ public final class ImpactConfig {
         BUILDER.pop();
     }
 
+    static {
+        BUILDER.comment("How far past the face an impact is felt. Everything else in this mod decides one",
+                        "contact, and a contact is a face - a hull that lands on its belly reports contacts",
+                        "along its belly and nowhere else, so without this the belly is the only thing that can",
+                        "ever break, however far the thing fell. A shock is the energy the contact had left",
+                        "over once it had broken its own block, handed to the blocks around it: it spreads",
+                        "through whatever is touching, pays each block's resistance out of itself as it goes,",
+                        "and dies when there is nothing left. It is what makes a stone hull dropped from",
+                        "orbit come apart instead of losing a floor, and it is the single most destructive",
+                        "thing here - the ceilings below are not decoration.")
+                .push("shock");
+    }
+
+    public static final ModConfigSpec.BooleanValue SHOCK_BLOCKS = BUILDER
+            .comment("Whether an impact is felt past the block it broke at all. Off, only blocks actually in",
+                    "contact ever break, which is cheap, entirely predictable, and leaves a hull that hits the",
+                    "ground at terminal velocity looking like it was set down on it.")
+            .define("shockBlocks", true);
+
+    public static final ModConfigSpec.DoubleValue SHOCK_MIN_OVERSHOOT = BUILDER
+            .comment("How far past a block's break speed an impact has to be before it sends a shock at all,",
+                    "as a ratio. Below this a break stays where it happened. This is the setting that keeps",
+                    "ordinary scraping, ploughing and landing from shaking builds apart: raise it and only",
+                    "outright crashes propagate, lower it towards 1 and every block broken anywhere sends a",
+                    "wave through whatever it was attached to.")
+            .defineInRange("minOvershoot", 2.0, 1.0, 1000.0);
+
+    public static final ModConfigSpec.DoubleValue HULL_SHOCK_SCALE = BUILDER
+            .comment("Energy a contraption's own blocks pass on per unit of overshoot past minOvershoot. This",
+                    "is the main dial for how thoroughly a build comes apart: at 0 a hull only ever loses its",
+                    "contact face, and every point of it is roughly one more block of hull the average wave",
+                    "gets through. A build made of something soft spends less per block, so the same number",
+                    "goes much further through a wooden ship than through a stone one.")
+            .defineInRange("hullScale", 8.0, 0.0, 1000.0);
+
+    public static final ModConfigSpec.DoubleValue TERRAIN_SHOCK_SCALE = BUILDER
+            .comment("The same for the world's own blocks, which is a different wish and so a separate number.",
+                    "A crash that takes a bite out of a hillside is a crater; one that keeps going is a hull",
+                    "that has dug itself a tunnel and a landscape that does not come back. Kept low by",
+                    "default for that reason - raise it for demolition, set it to 0 to leave terrain reading",
+                    "contacts only.")
+            .defineInRange("terrainScale", 1.5, 0.0, 1000.0);
+
+    public static final ModConfigSpec.DoubleValue SHOCK_COST = BUILDER
+            .comment("What one block's resistance costs the wave passing through it. Higher makes material",
+                    "matter more: an obsidian bulkhead stops a wave that ran the length of a wooden deck.",
+                    "Lower makes the shock care about distance alone, and every material comes apart alike.")
+            .defineInRange("cost", 1.0, 0.0, 100.0);
+
+    public static final ModConfigSpec.DoubleValue SHOCK_FALLOFF = BUILDER
+            .comment("What the wave keeps for every block it travels, regardless of material. This is the one",
+                    "that bounds it: cost alone cannot, because a wave crossing something that costs nothing",
+                    "would never stop. At 0.9 a wave is down to a tenth of itself after twenty blocks; at",
+                    "0.99 it carries almost undiminished and is held back by the ceilings alone.")
+            .defineInRange("falloff", 0.94, 0.1, 1.0);
+
+    public static final ModConfigSpec.IntValue SHOCK_MAX_PER_IMPACT = BUILDER
+            .comment("Ceiling on blocks one shock may break before it is called finished. A wave spreads in",
+                    "every direction at once, so what it reaches grows as the cube of how far it got and this",
+                    "cap is normally what ends a big one rather than the energy running out.")
+            .defineInRange("maxBlocksPerImpact", 384, 0, 65536);
+
+    public static final ModConfigSpec.IntValue SHOCK_MAX_PER_TICK = BUILDER
+            .comment("Ceiling on blocks all shocks together may break per level per tick. A hull landing flat",
+                    "reports hundreds of contacts in one tick and every one of them may send a wave, so this",
+                    "rather than maxBlocksPerImpact is what stands between a big crash and the tick budget.",
+                    "Separate from maxBlocksPerTick, which counts only what contacts themselves broke.")
+            .defineInRange("maxBlocksPerTick", 6144, 0, 262144);
+
+    static {
+        BUILDER.pop();
+    }
+
     public static final ModConfigSpec.BooleanValue DROP_ITEMS = BUILDER
             .comment("Whether shattered blocks drop their items.")
             .define("dropItems", false);
@@ -888,7 +961,15 @@ public final class ImpactConfig {
                          int lifetimeTicks,
                          boolean dropWhenLost,
                          double debrisDamagePerBlock,
-                         int debrisDamageMax) {
+                         int debrisDamageMax,
+                         boolean shockBlocks,
+                         double shockMinOvershoot,
+                         double hullShockScale,
+                         double terrainShockScale,
+                         double shockCost,
+                         double shockFalloff,
+                         int shockMaxPerImpact,
+                         int shockMaxPerTick) {
 
         /**
          * Reads the whole spec once, applying {@code impactStrength} to the thresholds it eases on the way.
@@ -969,7 +1050,15 @@ public final class ImpactConfig {
                     LIFETIME_TICKS.get(),
                     DROP_WHEN_LOST.get(),
                     DEBRIS_DAMAGE_PER_BLOCK.get(),
-                    DEBRIS_DAMAGE_MAX.get());
+                    DEBRIS_DAMAGE_MAX.get(),
+                    SHOCK_BLOCKS.get(),
+                    SHOCK_MIN_OVERSHOOT.get(),
+                    HULL_SHOCK_SCALE.get() * Math.max(1.0, strength),
+                    TERRAIN_SHOCK_SCALE.get() * Math.max(1.0, strength),
+                    SHOCK_COST.get(),
+                    SHOCK_FALLOFF.get(),
+                    SHOCK_MAX_PER_IMPACT.get(),
+                    SHOCK_MAX_PER_TICK.get());
         }
 
         /** The lowest speed at which any block, however soft and however heavy the ram, could give way. */

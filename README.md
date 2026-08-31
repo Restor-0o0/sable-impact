@@ -21,6 +21,10 @@ speed for every block it takes.
   heals if it is left alone.
 - **Boring.** Above a speed threshold the hull cuts a tunnel rather than skidding, giving up a share of its
   momentum for every block removed.
+- **Shock.** A break that overshot badly enough is felt past the block it happened to. The energy left over
+  spreads through whatever the block was attached to, spending each block's resistance as it goes, so a hull
+  dropped from height comes apart instead of losing the floor it landed on. See
+  [Shock](#shock-when-an-impact-is-felt-past-the-block-it-broke).
 - **Debris.** Broken blocks are thrown clear as falling blocks and go looking for somewhere to sit when they
   land, instead of vanishing the moment the spot they came down in happens to be taken. See
   [Debris](#debris-what-flies-and-where-it-lands).
@@ -156,6 +160,108 @@ Ordered by how much they save, and by how visible the cost is:
 `logPerformance = true` prints this mod's share of the tick to the log every five seconds, broken down by
 pass. It is worth turning on exactly once: when the game hitches, it is what says whether the hitch is here
 or somewhere else in the pack.
+
+## Shock: when an impact is felt past the block it broke
+
+Every other decision in this mod is made about a *contact*, and a contact is a face. A hull that lands on its
+belly reports contacts along its belly and nowhere else, so without this chapter the belly is the only thing
+that can ever break - however far the thing fell. That is right for a scrape along a cliff and plainly wrong
+for a drop: a stone hull that falls three hundred blocks does not lose its floor and keep its walls.
+
+A shock is what the contact had left over once it had broken its own block. It is handed to the blocks around
+that one, spreads through whatever is touching, pays each block's resistance out of itself as it goes, and
+dies when there is nothing left. It stays in the grid it started in - a contraption's plot is surrounded by
+empty plotgrid, so a wave that begins in a hull cannot leave it, and one that begins in terrain cannot climb
+into a hull.
+
+This is the most destructive thing in the mod. The ceilings at the end of this chapter are not decoration.
+
+Every setting named here lives in the `[shock]` section of the config file.
+
+```toml
+[shock]
+	shockBlocks = true
+	minOvershoot = 2.0
+	hullScale = 8.0
+	terrainScale = 1.5
+	cost = 1.0
+	falloff = 0.94
+	maxBlocksPerImpact = 384
+	maxBlocksPerTick = 6144
+```
+
+### When a shock happens at all
+
+`minOvershoot` is how far past a block's break speed the impact had to be before anything is passed on, as a
+ratio. At the default of `2.0` a block broken by an impact going twice the speed it takes to break it sends
+nothing; at three times it starts to.
+
+This is the setting that separates a crash from ordinary use. Ploughing a hillside, scraping a wall, settling
+onto the ground - all of those break blocks, and all of them are meant to leave the rest of the build alone.
+Raise `minOvershoot` and only outright crashes propagate. Lower it towards `1` and every block broken anywhere
+sends a wave through whatever it was attached to, which is a build that sheds hull every time it brushes a
+tree.
+
+`shockBlocks = false` turns the whole chapter off. Only blocks actually in contact ever break then, which is
+cheap, entirely predictable, and leaves a hull that hits the ground at terminal velocity looking like it was
+set down on it.
+
+### How much is passed on
+
+`hullScale` and `terrainScale` are the energy sent per unit of overshoot past `minOvershoot`. They are two
+numbers because they are two different wishes.
+
+`hullScale` is the main dial for how thoroughly a build comes apart, and the one to reach for first if
+structures still feel too solid. At `0` a hull only ever loses its contact face. Every point of it is roughly
+one more block of hull the average wave gets through, so the default of `8.0` is a wave that crosses a few
+dozen blocks of stone on a bad landing and most of a wooden deck.
+
+`terrainScale` is the same for the world's own blocks, and is kept low by default. A crash that takes a bite
+out of a hillside is a crater; one that keeps going is a hull that has dug itself a tunnel and a landscape
+that does not come back. Raise it for demolition, set it to `0` to leave terrain reading contacts only.
+
+Note that `impactStrength` multiplies both, so the shock keeps step with everything else when that dial moves.
+
+### How far it travels
+
+Two things take from a wave, and they are not the same thing.
+
+`cost` is what one block's resistance costs the wave passing through it. Higher makes material matter more: an
+obsidian bulkhead stops a wave that ran the length of a wooden deck. Lower makes the shock care about distance
+alone, and every material comes apart alike.
+
+`falloff` is what the wave keeps for every block it travels, regardless of material, and it is the one that
+bounds it - `cost` alone cannot, because a wave crossing something that costs nothing would never stop. At the
+default `0.94` a wave is down to a tenth of itself after about forty blocks. At `0.99` it carries almost
+undiminished and is held back by the ceilings alone.
+
+A block that is passable - undergrowth, water - ends that branch of the wave without being touched. A shock is
+carried by what is solid; letting it cross a lake would have one contact on a shoreline take the far bank
+with it.
+
+### What it is allowed to cost
+
+`maxBlocksPerImpact` is the ceiling on what one shock may break before it is called finished. A wave spreads
+in every direction at once, so what it reaches grows as the cube of how far it got, and this cap is normally
+what ends a big one rather than the energy running out.
+
+`maxBlocksPerTick` is the ceiling on what all shocks together may break per level per tick, and on a real
+crash it is this rather than `maxBlocksPerImpact` that stands between the impact and the tick budget: a hull
+landing flat reports hundreds of contacts in one tick and every one of them may send a wave. It is counted
+separately from the root `maxBlocksPerTick`, which counts only what the contacts themselves broke.
+
+Shocks also run under the same `maxTickMillis` deadline as the rest of the break pass, and unlike a queued
+break a shock cut short by it is not resumed on the next tick. A shock is a moment; half of one, a tick later,
+is not that moment.
+
+### If structures are still too solid
+
+In order: raise `hullScale`, lower `minOvershoot` towards `2.0` or below, raise `falloff` towards `0.99`, then
+raise `maxBlocksPerImpact`. If the crash is clearly breaking far more than shows up, the cap that is biting is
+`maxBlocksPerTick` here or `maxTickMillis` at the root.
+
+Bear in mind that a shock only starts where a contact already broke something. If nothing at all is breaking,
+this chapter is not the problem - see [Where to start](#where-to-start).
 
 ## Debris: what flies, and where it lands
 
@@ -310,6 +416,21 @@ How a block's strength is derived from its vanilla stats, before `materialOverri
 | `hullBackingWeight` | `0.5` | The same, for a contraption's own blocks. `0` restores the old reading, where every block of a hull was as strong as if the whole build were behind it. |
 | `hullBackingReach` | `3` | How deep a hull has to be packed to land as solid material. Anything thinner than this gives at the skin. |
 
+### Shock
+
+Section `[shock]`. See [Shock](#shock-when-an-impact-is-felt-past-the-block-it-broke).
+
+| Option | Default | |
+|---|---|---|
+| `shockBlocks` | `true` | Whether an impact is felt past the block it broke at all. |
+| `minOvershoot` | `2.0` | How far past a block's break speed an impact has to be before it sends a shock, as a ratio. |
+| `hullScale` | `8.0` | Energy a contraption's own blocks pass on per unit of overshoot past `minOvershoot`. The main dial for how thoroughly a build comes apart. |
+| `terrainScale` | `1.5` | The same for the world's own blocks. Kept low: a wave that keeps going through terrain is a tunnel. |
+| `cost` | `1.0` | What one block's resistance costs the wave passing through it. Higher makes material matter more. |
+| `falloff` | `0.94` | What the wave keeps for every block it travels, regardless of material. What bounds it. |
+| `maxBlocksPerImpact` | `384` | Ceiling on blocks one shock may break. |
+| `maxBlocksPerTick` | `6144` | Ceiling on blocks all shocks together may break per level per tick. |
+
 ### Crushing
 
 | Option | Default | |
@@ -444,7 +565,7 @@ without opening it:
 ./gradlew build -Pbuild_variant=fast
 ```
 
-→ `create_aeronautics_impact-1.1.0-fast.jar`, listed as *Create Aeronautics Impact (Fast)*. Same mod id and
+→ `create_aeronautics_impact-1.2.0-fast.jar`, listed as *Create Aeronautics Impact (Fast)*. Same mod id and
 same version, so only one variant can be installed at a time.
 
 For a release, build every variant in one run:
