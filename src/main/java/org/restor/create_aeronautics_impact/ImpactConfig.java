@@ -169,7 +169,7 @@ public final class ImpactConfig {
                     "saving available on a landed or low-flying build, and what it costs is exactly that: a",
                     "boulder rides the treetops for a moment at a time before the canopy under it gives.",
                     "Doubled automatically while adaptiveDetail has the sweep at its coarsest rung.")
-            .defineInRange("movingCrushInterval", 1, 1, 40);
+            .defineInRange("movingCrushInterval", 4, 1, 40);
 
     public static final ModConfigSpec.IntValue CRUSH_SPAN = BUILDER
             .comment("How many blocks above its own underside a contraption looks for what is holding it up.",
@@ -462,7 +462,7 @@ public final class ImpactConfig {
             .comment("Fraction of broken terrain blocks that fly off as debris instead of simply vanishing.",
                     "1.0 throws everything the per-tick cap can afford, which is what to reach for if a crater",
                     "should be surrounded by what came out of it. 0 turns terrain debris off.")
-            .defineInRange("scatterChance", 0.25, 0.0, 1.0);
+            .defineInRange("scatterChance", 0.15, 0.0, 1.0);
 
     public static final ModConfigSpec.DoubleValue CONTRAPTION_SCATTER_CHANCE = BUILDER
             .comment("The same for a contraption's own blocks. Higher than terrain by default: a ship losing its",
@@ -472,7 +472,7 @@ public final class ImpactConfig {
                     "Kept well under 1 all the same. Every block that flies is a block travelling away from the",
                     "wreck, and a wreck that throws all of itself is a fountain rather than a crash - what is",
                     "wanted is a few pieces turning through the air over a heap that is mostly still there.")
-            .defineInRange("contraptionScatterChance", 0.3, 0.0, 1.0);
+            .defineInRange("contraptionScatterChance", 0.2, 0.0, 1.0);
 
     public static final ModConfigSpec.BooleanValue SETTLE = BUILDER
             .comment("Whether blocks that did not fly are put back down near where they broke instead of being",
@@ -489,7 +489,7 @@ public final class ImpactConfig {
                     "At the default most of a ruined build is still lying where it came down, and terrain a",
                     "hull ploughed through is piled beside the furrow rather than deleted. 0 restores the old",
                     "behaviour of a clean hole and nothing to show for it.")
-            .defineInRange("settleShare", 0.85, 0.0, 1.0);
+            .defineInRange("settleShare", 0.5, 0.0, 1.0);
 
     public static final ModConfigSpec.IntValue SETTLE_DROP = BUILDER
             .comment("How far a settling block may fall looking for something to rest on, in blocks. It stops at",
@@ -511,7 +511,7 @@ public final class ImpactConfig {
                     "they just vanish instead of flying. This is the number that keeps the two chances above",
                     "from being a server killer: a hull ploughing a hillside breaks blocks by the hundred, and",
                     "each one turned into an entity has to fall, land, and be sent to every client in range.")
-            .defineInRange("maxScatterPerTick", 96, 0, 4096);
+            .defineInRange("maxScatterPerTick", 32, 0, 4096);
 
     public static final ModConfigSpec.DoubleValue SCATTER_VELOCITY_SCALE = BUILDER
             .comment("How fast debris is thrown, relative to how much the impact overshot the block's resistance.",
@@ -532,7 +532,7 @@ public final class ImpactConfig {
                     "that is why wreckage disappears. At 2 almost everything finds a home within a block or two",
                     "of where it landed. Each step out is a shell of positions to test, so this is not free:",
                     "0 restores vanilla's behaviour outright.")
-            .defineInRange("landingSearch", 2, 0, 8);
+            .defineInRange("landingSearch", 1, 0, 8);
 
     public static final ModConfigSpec.BooleanValue LANDING_NEEDS_FLOOR = BUILDER
             .comment("Whether a spot found by that search has to have something solid under it. On, debris piles",
@@ -577,7 +577,7 @@ public final class ImpactConfig {
                     "         That is one block change instead of an entity that has to fall, land, write a",
                     "         block anyway and be tracked by every client in range, so it is much the cheapest",
                     "         of the three and much the dullest.")
-            .defineEnum("mode", DebrisMode.FALL);
+            .defineEnum("mode", DebrisMode.SETTLE);
 
     public static final ModConfigSpec.IntValue MAX_SETTLE_PER_TICK = BUILDER
             .comment("Ceiling on blocks all settling together may write back per level per tick.",
@@ -586,7 +586,7 @@ public final class ImpactConfig {
                     "back, each with a full neighbour update behind it if blockUpdates is on, and the tick",
                     "that did it took over a second. What is refused past this is gone rather than heaped,",
                     "which costs a thinner pile and buys back the frame.")
-            .defineInRange("maxSettlePerTick", 256, 0, 32768);
+            .defineInRange("maxSettlePerTick", 128, 0, 32768);
 
     static {
         BUILDER.pop();
@@ -626,7 +626,7 @@ public final class ImpactConfig {
                     "the small end: a wing clipping a tower, one block driven into a wall. A build made of",
                     "something soft spends less per block, so the same number goes much further through a",
                     "wooden ship than through a stone one.")
-            .defineInRange("hullScale", 3.0, 0.0, 1000.0);
+            .defineInRange("hullScale", 1.5, 0.0, 1000.0);
 
     public static final ModConfigSpec.DoubleValue TERRAIN_SHOCK_SCALE = BUILDER
             .comment("The same for the world's own blocks, which is a different wish and so a separate number.",
@@ -634,7 +634,7 @@ public final class ImpactConfig {
                     "that has dug itself a tunnel and a landscape that does not come back. Kept low by",
                     "default for that reason - raise it for demolition, set it to 0 to leave terrain reading",
                     "contacts only.")
-            .defineInRange("terrainScale", 1.5, 0.0, 1000.0);
+            .defineInRange("terrainScale", 0.5, 0.0, 1000.0);
 
     public static final ModConfigSpec.DoubleValue SHOCK_KINETIC_SCALE = BUILDER
             .comment("Shock energy per kilojoule the striking body is actually carrying, which is the number",
@@ -649,7 +649,7 @@ public final class ImpactConfig {
                     "ship is about eight tonnes: at 1.0 it survives a landing at twelve metres a second",
                     "missing a tenth of itself, and arrives at sixty as a heap. 0 leaves shocks priced on",
                     "the contact alone, which is the 1.2.0 behaviour.")
-            .defineInRange("kineticScale", 1.0, 0.0, 1.0E6);
+            .defineInRange("kineticScale", 0.4, 0.0, 1.0E6);
 
     public static final ModConfigSpec.DoubleValue SHOCK_MIN_SPEED = BUILDER
             .comment("The speed (m/s) below which an impact is not a crash and sends no shock at all, whatever",
@@ -716,7 +716,7 @@ public final class ImpactConfig {
                     "places is not in pieces, it is gravel. Two cuts is a build in three parts.",
                     "0 turns cracking off as surely as fractureShare 0 does, and gives its energy back to the",
                     "ordinary wave.")
-            .defineInRange("fractureCount", 2, 0, 8);
+            .defineInRange("fractureCount", 1, 0, 8);
 
     public static final ModConfigSpec.DoubleValue FRACTURE_FALLOFF = BUILDER
             .comment("What a crack keeps of its purchasing power per block travelled, the way falloff does for a",
@@ -736,7 +736,7 @@ public final class ImpactConfig {
                     "still be traced across through the corner - which is a build cut end to end and still in",
                     "one piece with a groove in it. Wandering therefore costs the blocks it wanders over, and",
                     "0 is a clean saw cut and the cheapest.")
-            .defineInRange("fractureWander", 2, 0, 16);
+            .defineInRange("fractureWander", 0, 0, 16);
 
     public static final ModConfigSpec.IntValue FRACTURE_GAP = BUILDER
             .comment("How many blocks of nothing a crack may cross before it gives up, in blocks.",
@@ -748,7 +748,7 @@ public final class ImpactConfig {
                     "carry on through the floor, which is the cut that actually separates anything.",
                     "It is bounded so a crack cannot wander off into open plotgrid forever, and crossing a gap",
                     "is free: nothing is broken there because there was nothing there.")
-            .defineInRange("fractureGap", 6, 0, 64);
+            .defineInRange("fractureGap", 3, 0, 64);
 
     public static final ModConfigSpec.DoubleValue FRACTURE_COST = BUILDER
             .comment("What a crack pays for a block, as a fraction of what a wave pays for the same block.",
@@ -785,7 +785,7 @@ public final class ImpactConfig {
                     "point where one axis is plainly the longest, more reach changes nothing. Gaps are crossed",
                     "on the way, on the same allowance a crack itself gets, so a hull measures as the length of",
                     "the hull rather than as the thickness of the one plate the break happened to be in.")
-            .defineInRange("fractureScan", 48, 1, 512);
+            .defineInRange("fractureScan", 24, 1, 512);
 
     public static final ModConfigSpec.IntValue FRACTURE_MIN_RUN = BUILDER
             .comment("How far the build has to run along an axis before a cut across that axis counts as a cut,",
@@ -807,7 +807,7 @@ public final class ImpactConfig {
                     "allowance under [protect], the per-tick ceiling and the per-impact ceiling all stop a crack",
                     "exactly as they did. Set it to 0 for the pre-1.9.1 behaviour, where a crack is only ever as",
                     "long as the crash could pay for.")
-            .defineInRange("fractureFloor", 128, 0, 8192);
+            .defineInRange("fractureFloor", 64, 0, 8192);
 
     public static final ModConfigSpec.DoubleValue HULL_SHARE = BUILDER
             .comment("The share of a shock a Create: Aeronautics structure passes on through itself, against",
@@ -840,13 +840,13 @@ public final class ImpactConfig {
                     "it does not crack down the mast when the gondola clips a hill - the gondola shears off at",
                     "its joint, because that ring of wood is the least material holding the most weight. This",
                     "is how far the crack is allowed to travel along its own axis looking for that ring.")
-            .defineInRange("fractureNeck", 12, 0, 128);
+            .defineInRange("fractureNeck", 6, 0, 128);
 
     public static final ModConfigSpec.IntValue FRACTURE_NECK_SPAN = BUILDER
             .comment("How wide a window each candidate break is weighed across, in blocks either way. A plane's",
                     "strength is what is standing in it, so this is how much of the plane is sampled to find",
                     "that out. Wider is a truer answer and costs its square in block reads.")
-            .defineInRange("fractureNeckSpan", 6, 1, 32);
+            .defineInRange("fractureNeckSpan", 3, 1, 32);
 
     public static final ModConfigSpec.DoubleValue FRACTURE_NECK_BIAS = BUILDER
             .comment("What a candidate break pays for every block it sits away from the impact, as a share of",
@@ -869,14 +869,14 @@ public final class ImpactConfig {
                     "where it happened: the wreck levels what is near it before it reaches for what is far.",
                     "At 0.98 a hundred-block hull still comes apart end to end on a bad enough fall; at 0.9",
                     "the damage stays within about twenty blocks of the impact whatever the fall was.")
-            .defineInRange("falloff", 0.98, 0.1, 1.0);
+            .defineInRange("falloff", 0.9, 0.1, 1.0);
 
     public static final ModConfigSpec.IntValue SHOCK_MAX_PER_IMPACT = BUILDER
             .comment("Ceiling on blocks one shock may break over its whole life. A wave that runs into the",
                     "per-tick ceiling below is not cancelled, it is put down and picked up on the next tick,",
                     "so this is a total and not a rate: it is what stops a single crash from being allowed to",
                     "eat an unbounded amount, however many ticks it is given.")
-            .defineInRange("maxBlocksPerImpact", 8192, 0, 262144);
+            .defineInRange("maxBlocksPerImpact", 2048, 0, 262144);
 
     public static final ModConfigSpec.IntValue SHOCK_MAX_PER_TICK = BUILDER
             .comment("Ceiling on blocks all shocks together may break per level per tick. A hull landing flat",
@@ -885,7 +885,7 @@ public final class ImpactConfig {
                     "Waves stopped by it resume next tick, so what this really sets is how fast a wreck comes",
                     "apart rather than how much of it does. Separate from the root maxBlocksPerTick, which",
                     "counts only what contacts themselves broke.")
-            .defineInRange("maxBlocksPerTick", 6144, 0, 262144);
+            .defineInRange("maxBlocksPerTick", 2048, 0, 262144);
 
     public static final ModConfigSpec.IntValue SHOCK_MAX_TICKS = BUILDER
             .comment("How long a wave too big for one tick may keep going, in ticks, before what is left of it",
@@ -897,7 +897,7 @@ public final class ImpactConfig {
                     "as the crash that caused it.",
                     "Two seconds is about as long as anything should still be visibly falling. Raise it to let",
                     "very large wrecks finish what they started, at the price of that tail.")
-            .defineInRange("maxTicks", 40, 1, 1200);
+            .defineInRange("maxTicks", 20, 1, 1200);
 
     public static final ModConfigSpec.BooleanValue SHOCK_ONE_CRASH = BUILDER
             .comment("Whether a build's kinetic shock is drawn once per crash rather than once per tick.",
@@ -973,7 +973,7 @@ public final class ImpactConfig {
                     "It has to clear the tallest room in the build or a column whose floor is the far side of",
                     "a hold will find nothing and that part will not fail. It costs a block lookup per step of",
                     "every column, so it is also the largest single cost here.")
-            .defineInRange("depth", 24, 1, 256);
+            .defineInRange("depth", 12, 1, 256);
 
     public static final ModConfigSpec.IntValue COLLAPSE_DROP = BUILDER
             .comment("How far below the contact the search starts, in blocks. A hull touches down on whatever",
@@ -994,7 +994,7 @@ public final class ImpactConfig {
                     "this stops is not resumed later - the front carries on from where it is next tick and the",
                     "columns it skipped stay standing, which on a collapse is a hole in the wreckage rather",
                     "than a wave that never arrives.")
-            .defineInRange("maxBlocksPerTick", 2048, 0, 262144);
+            .defineInRange("maxBlocksPerTick", 768, 0, 262144);
 
     public static final ModConfigSpec.DoubleValue COLLAPSE_MIN_SPEED = BUILDER
             .comment("How fast a build has to be going for the landing to bring it down at all, in blocks per",
@@ -1069,7 +1069,7 @@ public final class ImpactConfig {
                     "pass is what Sable itself runs in a tick, so 24 is a build resolving about twenty-four",
                     "times sooner. The search is self-limiting: once it has its answer the passes cost",
                     "nothing, so this is a ceiling and not a workload.")
-            .defineInRange("rounds", 24, 0, 4096);
+            .defineInRange("rounds", 8, 0, 4096);
 
     public static final ModConfigSpec.IntValue SPLIT_TICKS = BUILDER
             .comment("How long a build stays on the hurried list after the last block it lost, in ticks. A",
@@ -1080,7 +1080,7 @@ public final class ImpactConfig {
     public static final ModConfigSpec.DoubleValue SPLIT_MILLIS = BUILDER
             .comment("Ceiling on what all of this may cost per level per tick, in milliseconds. Whatever the",
                     "round count says, the work stops here and picks up next tick.")
-            .defineInRange("millis", 3.0, 0.0, 50.0);
+            .defineInRange("millis", 1.5, 0.0, 50.0);
 
     static {
         BUILDER.pop();
@@ -1131,12 +1131,12 @@ public final class ImpactConfig {
     public static final ModConfigSpec.IntValue SEVER_INTERVAL = BUILDER
             .comment("Ticks between two passes over the same build. A wreck keeps coming apart for a while",
                     "after the landing, and this is how often that is noticed.")
-            .defineInRange("interval", 20, 1, 1200);
+            .defineInRange("interval", 40, 1, 1200);
 
     public static final ModConfigSpec.IntValue SEVER_VOLUME = BUILDER
             .comment("The largest build, as the volume of its bounding box in blocks, that is looked at at",
                     "all. The walk is one pass over that volume and costs a byte of memory per block of it.")
-            .defineInRange("volume", 1048576, 8, 67108864);
+            .defineInRange("volume", 262144, 8, 67108864);
 
     public static final ModConfigSpec.IntValue SEVER_PIECES = BUILDER
             .comment("How many pieces of one build may be assembled into builds of their own in one pass.",
@@ -1153,7 +1153,7 @@ public final class ImpactConfig {
             .comment("The most blocks a cross-section may have and still be treated as a joint rather than",
                     "as the body of the build. A hull's cross-section is hundreds of blocks and is dismissed",
                     "on its count alone, which is what keeps this cheap.")
-            .defineInRange("neck", 24, 1, 4096);
+            .defineInRange("neck", 12, 1, 4096);
 
     public static final ModConfigSpec.DoubleValue SEVER_CARRY = BUILDER
             .comment("How many blocks of build one point of a joint's resistance holds up. Resistance is the",
@@ -1166,7 +1166,7 @@ public final class ImpactConfig {
     public static final ModConfigSpec.DoubleValue SEVER_MILLIS = BUILDER
             .comment("Ceiling on what all of this may cost per level per tick, in milliseconds. Builds not",
                     "reached inside it are looked at on a later tick.")
-            .defineInRange("millis", 2.0, 0.0, 50.0);
+            .defineInRange("millis", 1.0, 0.0, 50.0);
 
     static {
         BUILDER.pop();
@@ -1238,35 +1238,35 @@ public final class ImpactConfig {
                     "Whatever is left standing on the wall of the box is anchored there rather than dropped,",
                     "because the structure carries on outside and the box cannot see how. The margin is what",
                     "keeps that wall away from the part being judged.")
-            .defineInRange("margin", 4, 0, 32);
+            .defineInRange("margin", 2, 0, 32);
 
     public static final ModConfigSpec.IntValue BEARING_DROP = BUILDER
             .comment("How far below the region the box reaches, which is how far down it can see the legs.",
                     "The deepest of the three margins on purpose: what holds a structure up is underneath it,",
                     "and a box that stops short of the ground anchors the structure to its own floor and finds",
                     "everything comfortably supported.")
-            .defineInRange("drop", 20, 0, 128);
+            .defineInRange("drop", 12, 0, 128);
 
     public static final ModConfigSpec.IntValue BEARING_RISE = BUILDER
             .comment("How far above the region the box reaches. Small, because what is overhead is load, and",
                     "load re-queues its own region as soon as it starts falling.")
-            .defineInRange("rise", 8, 0, 128);
+            .defineInRange("rise", 4, 0, 128);
 
     public static final ModConfigSpec.IntValue BEARING_ROUNDS = BUILDER
             .comment("How many times one box may break something and be solved again in a single visit.",
                     "This is the difference between a collapse and a drizzle: each round takes out everything",
                     "that failed, then asks where the load goes now that it is gone. One round is a single",
                     "layer coming off; a dozen is the whole thing coming down while you watch.")
-            .defineInRange("rounds", 8, 1, 64);
+            .defineInRange("rounds", 3, 1, 64);
 
     public static final ModConfigSpec.IntValue BEARING_INTERVAL = BUILDER
             .comment("How many ticks apart two solves may be, at the closest. The cost of a solve is the box,",
                     "not the damage, so this is the main dial for what the pass costs at all.")
-            .defineInRange("interval", 4, 1, 200);
+            .defineInRange("interval", 10, 1, 200);
 
     public static final ModConfigSpec.IntValue BEARING_REGIONS_PER_TICK = BUILDER
             .comment("How many regions one solve may work through before leaving the rest for later.")
-            .defineInRange("regionsPerTick", 2, 1, 64);
+            .defineInRange("regionsPerTick", 1, 1, 64);
 
     public static final ModConfigSpec.IntValue BEARING_MAX_REGIONS = BUILDER
             .comment("How many regions may be waiting at once. Past this a disturbance is dropped rather than",
@@ -1276,7 +1276,7 @@ public final class ImpactConfig {
 
     public static final ModConfigSpec.IntValue BEARING_MAX_PER_TICK = BUILDER
             .comment("How many blocks the whole pass may drop in one tick, across every region it visits.")
-            .defineInRange("maxPerTick", 384, 0, 100000);
+            .defineInRange("maxPerTick", 192, 0, 100000);
 
     public static final ModConfigSpec.DoubleValue BEARING_FALL_SPEED = BUILDER
             .comment("How hard a block that lost its support is thrown. Zero lets it drop and heap where it",
@@ -1319,7 +1319,7 @@ public final class ImpactConfig {
                     "This is the pace of a wreck rather than its size: lower it and a build comes apart over",
                     "more ticks without losing any less in the end, which is both easier to watch and easier",
                     "on the tick. It is also the number that keeps Sable's queued split ahead of the damage.")
-            .defineInRange("maxPerTick", 256, 1, 65536);
+            .defineInRange("maxPerTick", 128, 1, 65536);
 
     public static final ModConfigSpec.IntValue PROTECT_MAX_PER_IMPACT = BUILDER
             .comment("The most blocks one build may lose to one crash, however long that crash goes on.",
@@ -1327,7 +1327,7 @@ public final class ImpactConfig {
                     "around it and then stops, instead of carrying on until there is nothing left to walk",
                     "through - which is the whole difference between a ship that crashed and a ship that",
                     "dissolved. Raise it for catastrophes, lower it for dents.")
-            .defineInRange("maxPerImpact", 3000, 1, 1000000);
+            .defineInRange("maxPerImpact", 1500, 1, 1000000);
 
     public static final ModConfigSpec.IntValue PROTECT_REST_TICKS = BUILDER
             .comment("How long a build has to be left alone before the crash it was in counts as over and its",
@@ -1378,7 +1378,7 @@ public final class ImpactConfig {
                     "whole point of the mode.",
                     "Raise it and crashes get more violent without getting any wider reach through strong",
                     "material; the falloff under [shock] is what governs reach.")
-            .defineInRange("intensityScale", 0.02, 0.0, 1000.0);
+            .defineInRange("intensityScale", 0.012, 0.0, 1000.0);
 
     public static final ModConfigSpec.DoubleValue BRITTLE_THRESHOLD = BUILDER
             .comment("What a brittle block's strength is worth against a shock, as a multiple of its ordinary",
@@ -1443,7 +1443,7 @@ public final class ImpactConfig {
                     "zero without ever reaching it and keeps walking through material it can no longer harm,",
                     "which costs a great deal and does nothing.",
                     "Raise it to keep waves tight around what they actually broke.")
-            .defineInRange("floor", 0.05, 0.0, 100.0);
+            .defineInRange("floor", 0.15, 0.0, 100.0);
 
     public static final ModConfigSpec.IntValue STRESS_MAX_SCAN = BUILDER
             .comment("How many blocks one wave may look at over its whole life, whether or not it breaks them.",
@@ -1451,7 +1451,7 @@ public final class ImpactConfig {
                     "ceilings under [shock] stop bounding its walk - a shock running down a corridor of",
                     "material it cannot touch is free, and this is what makes it finite. It should be several",
                     "times maxBlocksPerImpact; a wave that hits it is a wave that has gone wandering.")
-            .defineInRange("maxScan", 24000, 0, 1000000);
+            .defineInRange("maxScan", 8000, 0, 1000000);
 
     public static final ModConfigSpec.BooleanValue GLASS_RUN = BUILDER
             .comment("Whether the windows go out along the whole length of the ship.",
@@ -1469,7 +1469,7 @@ public final class ImpactConfig {
             .comment("How far through a build the fragile pass runs, in blocks. This is meant to be most of a",
                     "large ship rather than a neighbourhood of the impact: the whole point is that the far",
                     "end loses its windows.")
-            .defineInRange("glassReach", 64, 0, 512);
+            .defineInRange("glassReach", 32, 0, 512);
 
     public static final ModConfigSpec.IntValue GLASS_SCAN_BUDGET = BUILDER
             .comment("How many blocks one fragile pass may read before it gives up. A fill through solid",
@@ -1477,18 +1477,18 @@ public final class ImpactConfig {
                     "a run through a mountain from costing a tick. It is a read budget and not a break one:",
                     "a pass that spends it all on stone and finds no glass has done nothing wrong, only",
                     "nothing useful.")
-            .defineInRange("glassScanBudget", 20000, 0, 1000000);
+            .defineInRange("glassScanBudget", 6000, 0, 1000000);
 
     public static final ModConfigSpec.IntValue GLASS_MAX_PER_IMPACT = BUILDER
             .comment("The most fragile blocks one pass may take out. A greenhouse is a lot of panes.")
-            .defineInRange("glassMaxPerImpact", 512, 0, 65536);
+            .defineInRange("glassMaxPerImpact", 192, 0, 65536);
 
     public static final ModConfigSpec.IntValue GLASS_MAX_RUNS = BUILDER
             .comment("How many fragile passes one body may set going per tick. A landing is one crash however",
                     "many contacts it reports, and the fill reaches the whole build from any of them, so the",
                     "second run finds the windows the first one already broke and is pure cost. Kept above 1",
                     "only because a build split in two by the crash has two halves to run through.")
-            .defineInRange("glassMaxRuns", 2, 0, 256);
+            .defineInRange("glassMaxRuns", 1, 0, 256);
 
     static {
         BUILDER.pop();
@@ -1602,21 +1602,21 @@ public final class ImpactConfig {
             .comment("How long a build stays anchored after the last block it lost, in ticks. Long enough to",
                     "cover the collapse, the connectivity walk and the separations that follow them; past",
                     "that a wreck is just a build again and can be unloaded like any other.")
-            .defineInRange("ticks", 200, 0, 24000);
+            .defineInRange("ticks", 100, 0, 24000);
 
     public static final ModConfigSpec.IntValue ANCHOR_CHUNKS = BUILDER
             .comment("The most chunk columns one build may hold. A build whose footprint is wider than this",
                     "is left alone entirely, on the grounds that holding that much of the world open costs",
                     "more than the stall it would have saved. Sixty-four columns is a build sixteen chunks",
                     "on a side, which is larger than anything the stall was a problem for.")
-            .defineInRange("chunks", 64, 1, 16384);
+            .defineInRange("chunks", 24, 1, 16384);
 
     public static final ModConfigSpec.IntValue ANCHOR_BUILDS = BUILDER
             .comment("The most builds one dimension may anchor at once. A battle drops more wrecks than a",
                     "crash does, and past some number of them holding the ground still under all of them is",
                     "worse for the tick than letting the far ones go. When more than this are in hand, the",
                     "ones that lost a block most recently are kept.")
-            .defineInRange("builds", 32, 1, 1024);
+            .defineInRange("builds", 10, 1, 1024);
 
     public static final ModConfigSpec.BooleanValue ANCHOR_ALL = BUILDER
             .comment("Whether every build in the world is anchored, rather than only the ones this mod has",
@@ -1640,7 +1640,7 @@ public final class ImpactConfig {
             .comment("The most chunk columns one dimension may hold across all builds at once. The ceiling on",
                     "the whole feature: whatever the other caps allow, the anchor stops taking new columns",
                     "here. Columns it is already holding go on being refreshed.")
-            .defineInRange("total", 256, 1, 65536);
+            .defineInRange("total", 96, 1, 65536);
 
     static {
         BUILDER.pop();
@@ -1776,7 +1776,7 @@ public final class ImpactConfig {
             .comment("Sweep away blocks a contraption flies straight through. Grass, flowers, vines, cobwebs and",
                     "similar have no collision box, so they never produce an impact and the hull silently swallows",
                     "them instead of mowing them down.")
-            .define("clearSoftBlocks", true);
+            .define("clearSoftBlocks", false);
 
     public static final ModConfigSpec.IntValue SOFT_SWEEP_INTERVAL = BUILDER
             .comment("Ticks between soft-block sweeps. Higher is cheaper and slightly less precise.")
@@ -1850,7 +1850,7 @@ public final class ImpactConfig {
                     "What is lost is the shape of the hole: a hull passing a block corner-on is caught by a",
                     "wider probe that also catches the block beside it, so the tunnel comes out rounder and",
                     "wider than the thing that made it. Raising this to 1 is close to a third off the sweep.")
-            .defineInRange("sweepFinestDetail", 0, 0, 3);
+            .defineInRange("sweepFinestDetail", 1, 0, 3);
 
     public static final ModConfigSpec.DoubleValue COARSE_SWEEP_TRAVEL = BUILDER
             .comment("Travel per lookahead window, in blocks, past which a hull is swept coarsely whatever the",
@@ -1867,7 +1867,7 @@ public final class ImpactConfig {
                     "what the reading cannot know about - ground generated underneath it, a player building up",
                     "to meet it. Stretching it is nearly free on a world full of parked airships, and what it",
                     "costs is that a tower thrown up under a hovering build goes unnoticed for that long.")
-            .defineInRange("maxQuietTicks", 20, 1, 200);
+            .defineInRange("maxQuietTicks", 60, 1, 200);
 
     public static final ModConfigSpec.BooleanValue FREE_FALL_QUIET = BUILDER
             .comment("Whether a hull crossing open air is measured for the whole crossing at once instead of a",
@@ -1898,7 +1898,7 @@ public final class ImpactConfig {
                     "are capped separately because the thing the cap guards against is ground appearing where",
                     "the reading said there was none, and that is a real risk under a build somebody is living",
                     "on and very nearly none under one going past at terminal velocity.")
-            .defineInRange("maxFallQuietTicks", 100, 1, 600);
+            .defineInRange("maxFallQuietTicks", 300, 1, 600);
 
     public static final ModConfigSpec.IntValue BACKING_MEMO_TICKS = BUILDER
             .comment("How many ticks a backing reading is kept for. What is behind a block is the slowest-changing",
@@ -1907,7 +1907,7 @@ public final class ImpactConfig {
                     "hillside went, so the block holds when it should have given; the next refresh corrects it.",
                     "What is bought is that a hull with thousands of contacts a tick pays for the look once every",
                     "few ticks instead of every one.")
-            .defineInRange("backingMemoTicks", 1, 1, 40);
+            .defineInRange("backingMemoTicks", 4, 1, 40);
 
     public static final ModConfigSpec.IntValue MAX_CONTACTS_PER_TICK = BUILDER
             .comment("How many contacts are examined per tick before the rest are waved through, or 0 for no",
@@ -1918,7 +1918,7 @@ public final class ImpactConfig {
                     "Contacts past the ceiling are not examined and so are not broken either. The hull is still",
                     "stopped by them, so what it costs is that a very heavy pile-up chews through terrain more",
                     "slowly than it should for as long as it lasts, rather than costing the tick.")
-            .defineInRange("maxContactsPerTick", 0, 0, 1000000);
+            .defineInRange("maxContactsPerTick", 2048, 0, 1000000);
 
     public static final ModConfigSpec.BooleanValue BLOCK_UPDATES = BUILDER
             .comment("Whether a silent removal - one past maxBreakEffectsPerTick - still tells the blocks around",
@@ -1930,7 +1930,7 @@ public final class ImpactConfig {
                     "tidying up. A torch on the wall of a fresh tunnel stays floating, sand above the hole does",
                     "not fall until something else pokes it, and redstone beside the crater does not recalculate.",
                     "The blocks are gone either way.")
-            .define("blockUpdates", true);
+            .define("blockUpdates", false);
 
     public static final ModConfigSpec.ConfigValue<List<? extends String>> MATERIAL_OVERRIDES = BUILDER
             .comment("Per-block settings, for saying what vanilla's own numbers do not.",
