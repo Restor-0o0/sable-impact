@@ -315,6 +315,20 @@ without opening it:
 → `create_aeronautics_impact-1.0.0-fast.jar`, listed as *Create Aeronautics Impact (Fast)*. Same mod id and
 same version, so only one variant can be installed at a time.
 
+For a release, build every variant in one run:
+
+```
+.\build-all.ps1
+```
+
+Both jars land in `dist/`, and the script reads each one back to report the name, version and licence it
+actually shipped with. Every branch is built in a throwaway git worktree, so it never touches your working
+copy and never leaves you on another branch — which also means it builds what is committed, and warns
+about uncommitted changes rather than shipping a jar without them.
+
+`-Offline` passes `--offline` to Gradle, `-SkipTests` drops the test run, `-OutDir <path>` collects the jars
+somewhere else.
+
 ## License
 
 [MIT](LICENSE). Include it in any modpack, public or private, without asking.

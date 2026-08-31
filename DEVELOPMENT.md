@@ -227,6 +227,22 @@ Same mod id, same version, same code — a variant is a set of config defaults, 
 pack can ship one jar instead of a jar plus instructions for editing a toml. The `v1.0.0-fast` branch is
 exactly the release branch with different defaults in `ImpactConfig` and `build_variant=fast`.
 
+**Building every variant.** `build-all.ps1` does the whole release in one run:
+
+```
+.\build-all.ps1                        # both jars into dist/
+.\build-all.ps1 -Offline -SkipTests
+```
+
+It builds each branch in a throwaway `git worktree` under the temp directory rather than checking branches
+out over your tree. That is what makes it safe to run from a dirty working copy on any branch, and it is
+also why it builds *committed* state — it prints a warning listing anything uncommitted rather than quietly
+shipping a jar that is missing it. Afterwards it reads `neoforge.mods.toml` back out of each jar and prints
+the display name, version and licence that actually shipped.
+
+Adding a variant is one line: append its branch to `$Branches` at the top of the script. No jar name is
+written down in it — whatever Gradle produced is what gets collected.
+
 **Tests.** 110 of them, all over the decision maths. They run without Minecraft on the classpath, which is
 the point — see the first invariant. Anything that needs a game type is not unit tested and has to be tried
 in a world.
