@@ -26,6 +26,12 @@ import java.util.Arrays;
  */
 public final class Backing {
 
+    /**
+     * Slots in the memo. A power of two, because the slot is masked out of the hash rather than divided.
+     *
+     * <p>Open addressing with no probing: a collision overwrites. Both blocks were about to be answered
+     * either way, so the cost of a collision is one repeated look rather than a wrong answer.
+     */
     private static final int MEMO = 16384;
 
     private static final long[] KEYS = new long[MEMO];
@@ -65,6 +71,12 @@ public final class Backing {
         return read(level, pos, axis, along > 0.0 ? 1 : -1, weight);
     }
 
+    /**
+     * The memoised reading for one block and one direction.
+     *
+     * <p>The key mixes position, axis and sign, so the same block struck from two sides is two answers - it
+     * genuinely has different amounts of terrain behind each face.
+     */
     private static double read(final ServerLevel level, final BlockPos pos,
                                final int axis, final int sign, final double weight) {
         final ImpactConfig.Tuning tuning = ImpactConfig.tuning();
@@ -86,6 +98,11 @@ public final class Backing {
         return held;
     }
 
+    /**
+     * How many solid blocks stand in an unbroken line behind the struck face, up to {@code reach}.
+     *
+     * <p>This is the number that decides whether something is a wall or a hillside.
+     */
     private static int behind(final ServerLevel level, final BlockPos.MutableBlockPos cursor,
                               final BlockPos pos, final int axis, final int sign, final int reach) {
         int count = 0;
@@ -101,6 +118,12 @@ public final class Backing {
         return count;
     }
 
+    /**
+     * How many of the four blocks around the struck one, on the two axes that are not the load's, are solid.
+     *
+     * <p>Worth much less than depth, and there for one case: a single block still set in a wall is not
+     * free-standing, even with nothing behind it.
+     */
     private static int beside(final ServerLevel level, final BlockPos.MutableBlockPos cursor,
                               final BlockPos pos, final int axis) {
         int count = 0;
@@ -118,6 +141,7 @@ public final class Backing {
         return count;
     }
 
+    /** Moves the shared cursor {@code step} blocks along one axis from {@code pos}. */
     private static void offset(final BlockPos.MutableBlockPos cursor, final BlockPos pos,
                                final int axis, final int step) {
         cursor.set(pos.getX() + (axis == 0 ? step : 0),
@@ -125,6 +149,14 @@ public final class Backing {
                 pos.getZ() + (axis == 2 ? step : 0));
     }
 
+    /**
+     * Whether this position counts as holding something up.
+     *
+     * <p>Deliberately generous at the edges: outside the build height and inside an unloaded chunk both count
+     * as solid, because nothing should get weaker on account of the server not having looked. The chunk is
+     * fetched with {@code getChunkNow} for the same reason - this runs from the physics thread, and a load
+     * here would be both a stall and a place to deadlock.
+     */
     private static boolean solid(final ServerLevel level, final BlockPos.MutableBlockPos cursor) {
         if (cursor.getY() < level.getMinBuildHeight() || cursor.getY() >= level.getMaxBuildHeight()) {
             return true;

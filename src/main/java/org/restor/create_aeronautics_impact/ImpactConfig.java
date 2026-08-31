@@ -4,6 +4,26 @@ import net.neoforged.neoforge.common.ModConfigSpec;
 
 import java.util.List;
 
+/**
+ * Every setting the mod has, and the per-tick snapshot the rest of the code actually reads.
+ *
+ * <p>Registered as a {@code SERVER} config, so it lives in the save rather than in the installation: a world
+ * carries its own tuning, and a new world starts from the defaults. NeoForge watches the file, so an edit
+ * while the server is running arrives as a reload event.
+ *
+ * <p><b>Adding a setting.</b> Declare a {@code public static final ModConfigSpec.*Value} field between the
+ * others - declaration order is the order they appear in the generated toml, so put it beside the ones it
+ * relates to - then add a field to {@link Tuning} and read it in {@link Tuning#read()}. The record's
+ * component order and the constructor call in {@code read()} must line up; they are positional, and the
+ * compiler will only catch a mismatch if the types happen to differ.
+ *
+ * <p>Skip {@code Tuning} only for a value that is not read per tick: {@code cullInteriorVoxels} is asked
+ * once per remesh from a thread that has no tick, and {@code sweepFinestDetail} and {@code materialOverrides}
+ * are pushed into the classes that need them from {@code read()} rather than being carried through it.
+ *
+ * <p>The comment on a setting is the whole of its documentation for a server owner, so it is worth saying
+ * what the trade is and why the default is the default, not only what the number does.
+ */
 public final class ImpactConfig {
 
     private static final ModConfigSpec.Builder BUILDER = new ModConfigSpec.Builder();
@@ -664,11 +684,23 @@ public final class ImpactConfig {
     private ImpactConfig() {
     }
 
+    /**
+     * Drops the snapshot and every profile derived from it.
+     *
+     * <p>Called on config load, reload and unload, and on {@code TagsUpdatedEvent} - a material rule written
+     * against a tag means nothing until the tag has been populated, and a datapack reload can repopulate it.
+     */
     public static void invalidate() {
         cached = null;
         BlockProfile.clearCache();
     }
 
+    /**
+     * This tick's settings, read from the spec on first use after every {@link #invalidate()}.
+     *
+     * <p>Not safe to call before the config has loaded, which is why the two callers that can run that early
+     * - the block mixin and the voxel classifier - check {@code SPEC.isLoaded()} first.
+     */
     public static Tuning tuning() {
         Tuning current = cached;
         if (current == null) {
@@ -678,6 +710,10 @@ public final class ImpactConfig {
         return current;
     }
 
+    /**
+     * Read straight off the spec rather than through {@link Tuning}, because it is asked from the collider
+     * remesh, which happens off the server thread and outside any tick.
+     */
     public static boolean cullInteriorVoxels() {
         return SPEC.isLoaded() && CULL_INTERIOR_VOXELS.get();
     }
@@ -749,6 +785,9 @@ public final class ImpactConfig {
                          int maxContactsPerTick,
                          boolean blockUpdates) {
 
+        /**
+         * Reads the whole spec once, applying {@code impactStrength} to the thresholds it eases on the way.
+         */
         static Tuning read() {
             // Two of the settings do not belong to any one tick. The sweep ladder is pure arithmetic with
             // nothing from the game in it, so it is told rather than asked; the material table is parsed text,

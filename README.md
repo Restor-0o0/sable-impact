@@ -304,10 +304,23 @@ Unit tests cover the pure decision maths (`ImpactResolver`, `SweepDetail`, backi
 ./gradlew test
 ```
 
+To build a named variant — the same mod with a different set of config defaults — pass `build_variant`. It
+suffixes both the jar file and the name shown in the mod list, so a player can tell which one they installed
+without opening it:
+
+```
+./gradlew build -Pbuild_variant=fast
+```
+
+→ `create_aeronautics_impact-1.0.0-fast.jar`, listed as *Create Aeronautics Impact (Fast)*. Same mod id and
+same version, so only one variant can be installed at a time.
+
 ## Branches
 
 - **`v1.0.0`** — the release build.
 - **`v1.0.0-fast`** — the same mod shipped with performance-first defaults. See [`FAST.md`](FAST.md) on that
   branch for what each one costs. Same mod id, so only one of the two jars can be installed at a time.
 
-`AERO_IMPACT_DESIGN.md` documents the model the code implements.
+[`DEVELOPMENT.md`](DEVELOPMENT.md) is the guide for working on the mod itself: file map, entry
+points, invariants and how to add a setting. `AERO_IMPACT_DESIGN.md` documents the model the code
+implements.

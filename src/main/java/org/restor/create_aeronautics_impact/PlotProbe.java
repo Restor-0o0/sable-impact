@@ -109,6 +109,13 @@ final class PlotProbe {
         return true;
     }
 
+    /**
+     * The block at a plot coordinate, or null where there is nothing solid to hit.
+     *
+     * <p>Null covers three cases the callers treat the same way: an unloaded chunk, air, and anything the
+     * profile calls passable. The chunk is fetched with {@code getChunkNow} because this is reached from the
+     * physics thread, where loading one would be both a stall and a place to deadlock.
+     */
     private @Nullable BlockState resolve(final int x, final int y, final int z) {
         final LevelChunk chunk = chunkAt(x >> 4, z >> 4);
         if (chunk == null) {
@@ -123,6 +130,13 @@ final class PlotProbe {
         return BlockProfile.of(this.level, this.cursor, state).passable() ? null : state;
     }
 
+    /**
+     * The chunk, through a small direct-mapped cache.
+     *
+     * <p>A rewind walks a straight line through one plot, so consecutive probes land in the same chunk over
+     * and over. Nulls are cached too - a plot's neighbours are mostly nothing, and looking them up repeatedly
+     * to be told so again is the same cost as looking up a real one.
+     */
     private @Nullable LevelChunk chunkAt(final int chunkX, final int chunkZ) {
         final long key = (((long) chunkX) << 32) ^ (chunkZ & 0xFFFFFFFFL);
         final int slot = (int) (key ^ (key >>> 32)) & (CHUNKS - 1);

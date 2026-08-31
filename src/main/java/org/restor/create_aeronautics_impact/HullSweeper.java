@@ -297,6 +297,16 @@ public final class HullSweeper {
         }
     }
 
+    /**
+     * Everything the solver will not report on its own, once per level tick.
+     *
+     * <p>Sable only calls {@link ImpactCallback} where a collider actually meets one, which leaves three
+     * things unaccounted for: terrain a fast hull passes clean through between two steps, terrain a landed
+     * hull is resting its weight on, and terrain a hull has somehow ended up inside. This is where those are
+     * found - by looking at the ground around each hull rather than by waiting to be told.
+     *
+     * <p>Single-player fires this for the client level too; only server levels are swept.
+     */
     public static void onLevelTick(final LevelTickEvent.Post event) {
         final Level level = event.getLevel();
         if (!(level instanceof final ServerLevel serverLevel) || !ImpactConfig.SPEC.isLoaded()) {
@@ -319,6 +329,17 @@ public final class HullSweeper {
         }
     }
 
+    /**
+     * One level's hulls, in order of how likely they are to need the work.
+     *
+     * <p>Also where the tick boundary is handled - the rations, the clock, and the detail level the whole
+     * sweeper runs at are rolled over here rather than in the tick listener, because several levels share
+     * one budget and it has to be judged once for all of them.
+     *
+     * <p>A hull with nothing but air around it is dropped for a while rather than re-examined every tick:
+     * that is the ordinary case for anything in flight, and it is the difference between the sweeper costing
+     * nothing and it costing a scan per hull per tick forever.
+     */
     private static void sweep(final ServerLevel serverLevel) {
         final ImpactConfig.Tuning tuning = ImpactConfig.tuning();
         final boolean clearSoft = ImpactConfig.CLEAR_SOFT_BLOCKS.get();
@@ -1068,6 +1089,13 @@ public final class HullSweeper {
         return ((long) (int) Math.ceil(low) << 32) | ((int) Math.floor(high) & 0xFFFFFFFFL);
     }
 
+    /**
+     * Adds one block to the crush frontier, once.
+     *
+     * <p>Four parallel lists rather than a queue of objects: this is filled and drained every crush pass over
+     * every block under every landed build, and the object per entry was the allocation the pass made most of.
+     * {@code QUEUED} is what keeps the load from going round a ring of blocks forever.
+     */
     private static void enqueue(final long key, final double load, final int step, final boolean under) {
         if (!QUEUED.add(key)) {
             return;
@@ -1189,6 +1217,7 @@ public final class HullSweeper {
         return true;
     }
 
+    /** Whether a shoved block could actually go here: replaceable, and clear of the hull that shoved it. */
     private static boolean vacant(final ServerLevel level, final BoundingBox3dc bounds, final BlockPos spot) {
         // Inside the hull is not somewhere a block can go: it would be crushed again on the next pass, which
         // is a block teleporting under the very thing that pushed it out. Brushing the hull is not good
@@ -1220,6 +1249,12 @@ public final class HullSweeper {
         return toX * toX + toZ * toZ > fromX * fromX + fromZ * fromZ;
     }
 
+    /**
+     * Moves a block out of the hull's way, and puts both ends on cooldown.
+     *
+     * <p>The cooldown is what stops a shove becoming a loop: without it the hull meets the block again in its
+     * new spot next tick and shoves it back, and the pair trade places twenty times a second.
+     */
     private static void move(final ServerLevel level,
                              final BlockPos from,
                              final BlockPos to,
@@ -1232,6 +1267,7 @@ public final class HullSweeper {
         SHOVED.put(to.asLong(), free);
     }
 
+    /** The hull's mass, or zero when Sable's tracker has nothing usable. */
     private static double massOf(final ServerSubLevel subLevel) {
         final MassData mass = subLevel.getMassTracker();
         return mass == null || mass.isInvalid() ? 0.0 : mass.getMass();
@@ -1351,11 +1387,19 @@ public final class HullSweeper {
     }
 
     /** How far past its break speed a side was hit, which is how fast it accumulates damage. */
+    /** How far past its break speed the block was hit, which is how fast it accumulates damage. */
     private static double overshoot(final double speed, final ImpactResolver.Side side) {
         final double breakSpeed = side.breakSpeed();
         return breakSpeed <= 0.0 ? Double.MAX_VALUE : Math.abs(speed) / breakSpeed;
     }
 
+    /**
+     * The axis the hull is mostly travelling along, as 0, 1 or 2.
+     *
+     * <p>Carving sweeps one axis rather than three. A hull moving diagonally is still going somewhere in
+     * particular, and the slab is grown along the other two axes to cover the drift - see
+     * {@link #sweptRegion} - so picking one costs coverage nothing and costs two thirds less to scan.
+     */
     private static int dominantAxis(final Vector3dc velocity) {
         final double x = Math.abs(velocity.x());
         final double y = Math.abs(velocity.y());
@@ -1410,6 +1454,13 @@ public final class HullSweeper {
         return ((long) (int) Math.ceil(low) << 32) | ((int) Math.floor(high) & 0xFFFFFFFFL);
     }
 
+    /**
+     * Clears grass, flowers and the like out of the faces the hull is driving into.
+     *
+     * <p>Purely cosmetic - none of it would stop anything - and that is the point: without it a build taxiing
+     * across a meadow drags a lawn along with it, because Sable gives these no collider and they simply pass
+     * through. Only the leading faces are looked at, so the cost follows the swept area rather than the hull.
+     */
     private static void sweepSoft(final ServerLevel level,
                                   final ServerSubLevel subLevel,
                                   final Vector3d velocity,
@@ -1637,6 +1688,7 @@ public final class HullSweeper {
         return new Slab(min[0], max[0], min[1], max[1], min[2], max[2]);
     }
 
+    /** The outermost {@code thickness} blocks of the hull's box on the face it is driving into. */
     private static Slab leadingSlab(final BoundingBox3dc bounds,
                                     final int axis,
                                     final double component,
@@ -1658,6 +1710,10 @@ public final class HullSweeper {
                 axis == 2 ? (forward ? maxZ : minZ + thickness - 1) : maxZ);
     }
 
+    /**
+     * How deep the leading slab has to be to cover everything the hull will cross before it is looked at
+     * again, plus one for the blocks it is already in.
+     */
     private static int slabThickness(final double component, final int interval) {
         final double travelled = Math.abs(component) * interval / 20.0;
         return Math.clamp((long) Math.ceil(travelled) + 1L, 1, MAX_SLAB_THICKNESS);
@@ -1729,18 +1785,19 @@ public final class HullSweeper {
         }
     }
 
+    /**
+     * Whether a hull block sits dead on this world point.
+     *
+     * <p>The cheap point test, for the soft sweep where a near miss costs a flower rather than a hole in the
+     * ground. Anything that decides whether terrain breaks uses {@link #sweeps} instead.
+     *
+     * <p>Overwrites {@code worldPoint} with the hull-local coordinate; the callers pass scratch vectors.
+     */
     private static boolean occupies(final ServerSubLevel subLevel, final Vector3d worldPoint) {
         subLevel.logicalPose().transformPositionInverse(worldPoint, worldPoint);
         return PROBE.solidAt(worldPoint.x, worldPoint.y, worldPoint.z);
     }
 
-    /**
-     * Whether the hull sweeps through the block whose centre is {@code worldPoint}, rather than whether that
-     * centre lands dead inside a hull block. The distinction is the whole difference between carving and
-     * tunnelling: an obsidian rod is one or two blocks across, so most of what it ploughs through it clips off
-     * axis, and a point test finds nothing to break there. The rod flies on and only starts breaking where it
-     * finally happens to line up, which reads as it having spawned underground.
-     */
     /**
      * How the hull meets one block: over it, against it, or not at all.
      *
@@ -1797,10 +1854,23 @@ public final class HullSweeper {
         return CONTACT_NONE;
     }
 
+    /**
+     * Whether the hull sweeps through the block whose centre is {@code worldPoint}, rather than whether that
+     * centre lands dead inside a hull block. The distinction is the whole difference between carving and
+     * tunnelling: an obsidian rod is one or two blocks across, so most of what it ploughs through it clips off
+     * axis, and a point test finds nothing to break there. The rod flies on and only starts breaking where it
+     * finally happens to line up, which reads as it having spawned underground.
+     */
     private static boolean sweeps(final ServerSubLevel subLevel, final Vector3d worldPoint, final double clip) {
         return sweepsLocal(subLevel.logicalPose().transformPositionInverse(worldPoint, worldPoint), clip);
     }
 
+    /**
+     * The same test in the hull's own frame, for callers that have already transformed the point.
+     *
+     * <p>Nine probes: the centre, then the eight corners of a cube of half-width {@code clip} around it.
+     * Corners rather than face centres because a hull edge crossing the block diagonally misses all six faces.
+     */
     private static boolean sweepsLocal(final Vector3dc local, final double clip) {
         if (PROBE.solidAt(local.x(), local.y(), local.z())) {
             return true;
@@ -1816,14 +1886,26 @@ public final class HullSweeper {
         return false;
     }
 
+    /**
+     * What {@link #forEachBlock} calls per block.
+     *
+     * <p>The cursor is reused between calls, so anything kept past the call has to be copied.
+     */
     @FunctionalInterface
     private interface BlockVisitor {
         void visit(BlockPos.MutableBlockPos pos, BlockState state);
     }
 
+    /** A block-aligned box to scan, inclusive at both ends on all three axes. */
     private record Slab(int minX, int maxX, int minY, int maxY, int minZ, int maxZ) {
     }
 
+    /**
+     * What is remembered about one hull between ticks: where it was, when it last actually moved, and how
+     * long it has earned the right to be left alone for.
+     *
+     * <p>Keyed by runtime id in {@code TRACKED} and dropped after {@link #FORGET_TICKS} without being seen.
+     */
     private static final class Tracked {
         private long lastMoved;
         private long lastSeen;
@@ -1840,6 +1922,7 @@ public final class HullSweeper {
             this.z = z;
         }
 
+        /** How far the hull is from where it was last recorded, which is what {@link #MOVED} is compared to. */
         private double displacedFrom(final double x, final double y, final double z) {
             final double dx = x - this.x;
             final double dy = y - this.y;
@@ -1847,6 +1930,7 @@ public final class HullSweeper {
             return Math.sqrt(dx * dx + dy * dy + dz * dz);
         }
 
+        /** Records a new position and resets the stillness clock. */
         private void moved(final long now, final double x, final double y, final double z) {
             this.lastMoved = now;
             this.x = x;
@@ -1875,10 +1959,18 @@ public final class HullSweeper {
             this.carving = carving;
         }
 
+        /** Charges one block read. */
         private void spend() {
             spend(1);
         }
 
+        /**
+         * Charges {@code amount} block reads to this budget and to the tick's.
+         *
+         * <p>Both, because the per-sweep limit stops one hull eating the tick and the shared counters stop
+         * fifty hulls doing it between them. {@code workSinceClock} is what decides when the clock is next
+         * worth reading at all.
+         */
         private void spend(final int amount) {
             this.scanned += amount;
             workSinceClock += amount;
@@ -1889,6 +1981,10 @@ public final class HullSweeper {
             }
         }
 
+        /**
+         * Whether this sweep should stop: it has cleared its quota, read too much, run the tick's allowance
+         * out, or the tick itself is over time.
+         */
         private boolean exhausted() {
             return this.cleared >= this.maxCleared
                     || this.scanned > MAX_BLOCKS_SCANNED

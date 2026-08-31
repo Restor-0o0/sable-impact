@@ -92,19 +92,29 @@ public final class MaterialOverrides {
             return this.scale != null ? base * this.scale : base;
         }
 
+        /** Whether the block is indestructible, given what its own stats came to. */
         public boolean indestructible(final boolean derived) {
             return this.indestructible != null ? this.indestructible : derived;
         }
 
+        /** Whether the block is fragile, given what Sable said about it. */
         public boolean fragile(final boolean derived) {
             return this.fragile != null ? this.fragile : derived;
         }
 
+        /** Whether the block is soft, given what its collision shape said. */
         public boolean soft(final boolean derived) {
             return this.soft != null ? this.soft : derived;
         }
     }
 
+    /**
+     * The parsed file, keyed for lookup: one rule for everything, one per namespace, one per block.
+     *
+     * <p>Tags are a list rather than a map because there is nothing to key them by - a block state cannot
+     * name the tags it is in, so each has to be asked in turn. That keeps them in file order, which is what
+     * makes "the entry written later wins" true between two tags that both match.
+     */
     private record Table(Rule everything,
                          Map<String, Rule> namespaces,
                          List<Map.Entry<TagKey<Block>, Rule>> tags,
@@ -162,6 +172,10 @@ public final class MaterialOverrides {
         return rule;
     }
 
+    /**
+     * Builds a table from the config lines. Never throws: a line that does not parse is logged and skipped,
+     * because one typo should not take the other forty rules down with it.
+     */
     private static Table parse(@Nullable final List<? extends String> entries) {
         if (entries == null || entries.isEmpty()) {
             return Table.EMPTY;
@@ -210,6 +224,14 @@ public final class MaterialOverrides {
         return new Table(everything, namespaces, tags, blocks);
     }
 
+    /**
+     * The settings half of one entry, or null if any part of it was unusable.
+     *
+     * <p>All or nothing per line. A rule that half applied would be worse than one that did not: the half
+     * that took effect is invisible, so the log line about the half that did not looks like the whole story.
+     *
+     * @param parts the whole entry already split, with the selector still at index 0.
+     */
     @Nullable
     private static Rule settings(final String line, final String[] parts) {
         if (parts.length < 2) {
@@ -251,6 +273,7 @@ public final class MaterialOverrides {
         return new Rule(resistance, scale, indestructible, fragile, soft);
     }
 
+    /** A non-negative number within the range the config allows, or null with a line in the log. */
     @Nullable
     private static Double number(final String line, final String setting, final String value) {
         final double parsed;
@@ -267,6 +290,7 @@ public final class MaterialOverrides {
         return parsed;
     }
 
+    /** {@code true} or {@code false}, case-insensitively, or null with a line in the log. */
     @Nullable
     private static Boolean flag(final String line, final String setting, final String value) {
         if (value.equalsIgnoreCase("true")) {

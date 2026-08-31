@@ -1,5 +1,20 @@
 package org.restor.create_aeronautics_impact;
 
+/**
+ * The whole decision model, as arithmetic.
+ *
+ * <p>Every question this mod asks - whether a block breaks, which of two sides gives way, what that costs the
+ * winner, how much load terrain bears before it gives - is answered here, and answered as a static function
+ * of numbers that were passed in.
+ *
+ * <p><b>This class must never reference Minecraft, NeoForge or Sable.</b> Not as a matter of taste: the JVM
+ * verifies a class by loading every type it mentions, so a single import of a game type would pull the whole
+ * of Minecraft into the unit tests and there would be no unit tests. That is also why every value it needs
+ * from the config arrives as a parameter rather than being read from {@link ImpactConfig} - the call sites
+ * are wordier for it, and the model stays testable without a game around it.
+ *
+ * <p>The same rule applies to {@link SweepDetail}, and to anything else the tests reach.
+ */
 public final class ImpactResolver {
 
     private ImpactResolver() {
@@ -40,11 +55,6 @@ public final class ImpactResolver {
     }
 
     /**
-     * Pulls the vanilla resistance range in towards itself. Vanilla spans dirt at 0.5 and obsidian at 300,
-     * and feeding that straight into a break speed puts obsidian at hundreds of m/s. An exponent below one
-     * keeps the ordering intact while landing the whole range inside speeds a contraption can actually reach.
-     */
-    /**
      * How much speed a hull gives up to the blocks it just broke.
      *
      * <p>The drag is priced per block, and a hull ploughing terrain meets hundreds of them in one tick, so
@@ -64,6 +74,11 @@ public final class ImpactResolver {
         return Math.min(momentum / hullMass, speed * maxShare);
     }
 
+    /**
+     * Pulls the vanilla resistance range in towards itself. Vanilla spans dirt at 0.5 and obsidian at 300,
+     * and feeding that straight into a break speed puts obsidian at hundreds of m/s. An exponent below one
+     * keeps the ordering intact while landing the whole range inside speeds a contraption can actually reach.
+     */
     public static double compress(double resistance, double exponent) {
         if (exponent >= 1.0 || resistance <= 0.0 || Double.isInfinite(resistance)) {
             return resistance;
@@ -71,10 +86,22 @@ public final class ImpactResolver {
         return Math.pow(resistance, exponent);
     }
 
+    /**
+     * The speed needed to break a block of this strength, before mass gets a say.
+     *
+     * <p>Deliberately affine rather than proportional: the floor is added, not multiplied, so a block of no
+     * strength at all still cannot be broken by a contraption settling onto it.
+     */
     public static double breakSpeed(double resistance, double minImpactSpeed, double hardnessScale) {
         return minImpactSpeed + hardnessScale * resistance;
     }
 
+    /**
+     * A contraption's mass spread over the blocks of it that are actually touching something.
+     *
+     * <p>The denominator is what makes weight mean anything: a hull is heavy because it is large, and a large
+     * hull lands on a lot of ground. What breaks terrain is a lot of mass on a little of it.
+     */
     public static double contactPressure(double mass, int contactBlocks) {
         if (mass <= 0.0) {
             return 0.0;
@@ -120,6 +147,13 @@ public final class ImpactResolver {
         return pressure / strength;
     }
 
+    /**
+     * How much easier this contraption's weight makes breaking things, as a multiplier around one.
+     *
+     * <p>Clamped at both ends, and the lower clamp is the one that matters: without it a sprawling, hollow
+     * build would be arbitrarily bad at breaking anything, which reads as the mod being broken rather than
+     * as the build being light.
+     */
     public static double massFactor(double contactPressure, double referencePressure, double sensitivity,
                                     double minFactor, double maxFactor) {
         if (contactPressure <= 0.0 || referencePressure <= 0.0 || sensitivity <= 0.0) {
@@ -165,6 +199,13 @@ public final class ImpactResolver {
         return Math.max(overshoot, 1.0) / resilience;
     }
 
+    /**
+     * Whether one side of a contact breaks, given how fast it was hit.
+     *
+     * <p>{@code budgetExhausted} is folded in here rather than checked by the caller so that running out of
+     * tick and being too slow take the same path out: a contact that is declined for either reason is one
+     * Sable resolves the ordinary way, and the hull is stopped by it either way.
+     */
     public static boolean shouldBreak(double impactVelocity, double breakSpeed, boolean indestructible, boolean budgetExhausted) {
         if (indestructible || budgetExhausted) {
             return false;
@@ -213,13 +254,34 @@ public final class ImpactResolver {
         return Math.clamp(loser.resistance() / strength, 0.0, 1.0);
     }
 
+    /**
+     * One side of a contact, reduced to the three numbers that decide it.
+     *
+     * <p>The two are not the same question and are not interchangeable. {@code resistance} is what the block
+     * is made of and decides <em>which</em> of the pair gives way; {@code breakSpeed} is what it takes to
+     * beat it and decides <em>whether</em> either does. Contraption toughness is deliberately in the second
+     * and not the first - see {@link BlockProfile#side(double, double, double)}.
+     *
+     * @param resistance     material strength, after compression, backing and any override.
+     * @param breakSpeed     the speed needed to beat it, after toughness and mass.
+     * @param indestructible whether it is never broken, whatever the numbers say.
+     */
     public record Side(double resistance, double breakSpeed, boolean indestructible) {
 
+        /** Whether this side breaks at this closing speed, ignoring the tick budget. */
         boolean yieldsTo(double impactVelocity) {
             return shouldBreak(impactVelocity, this.breakSpeed, this.indestructible, false);
         }
     }
 
+    /**
+     * Which of the two sides of a contact gives way, or neither.
+     *
+     * <p>A null {@code other} means the opposing body is not a sub-level - terrain being hit by a hull - and
+     * only the struck block is at risk. Otherwise the weaker material is offered up first, and the other is
+     * only considered if the weaker one survived: exactly one block can break per contact, because breaking
+     * both would let two hulls pass through each other.
+     */
     public static Victim victim(double impactVelocity, Side hit, Side other, boolean budgetExhausted) {
         if (budgetExhausted) {
             return Victim.NONE;
@@ -289,6 +351,12 @@ public final class ImpactResolver {
         return 1.0 - share + share * Math.clamp(support, 0.0, 1.0);
     }
 
+    /**
+     * Which of two sides is the softer material, with break speed as the tie-break.
+     *
+     * <p>The tie-break is what makes a build's own toughness matter when it rams a wall of the material it is
+     * made of: same resistance, and the side that needs less speed to break is the one that does.
+     */
     private static boolean weaker(final Side side, final Side than) {
         if (side.resistance() != than.resistance()) {
             return side.resistance() < than.resistance();
@@ -296,6 +364,12 @@ public final class ImpactResolver {
         return side.breakSpeed() < than.breakSpeed();
     }
 
+    /**
+     * How fast a broken block is thrown, from how far the impact overshot what the block could take.
+     *
+     * <p>Capped outright. Debris is a falling block entity, and one launched at the speed a real crash
+     * carries lands hundreds of blocks away in someone else's chunks.
+     */
     public static double scatterSpeed(double impactVelocity, double resistance, double scatterVelocityScale) {
         double excess = Math.abs(impactVelocity) - resistance;
         if (excess <= 0.0) {

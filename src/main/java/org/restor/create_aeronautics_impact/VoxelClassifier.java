@@ -38,6 +38,11 @@ public final class VoxelClassifier {
         }
     }
 
+    /**
+     * The classification proper.
+     *
+     * <p>Split from {@link #classify} only so the timing wrapper has a single return to measure.
+     */
     private static @Nullable VoxelNeighborhoodState classified(final LevelAccelerator level,
                                                                final BlockPos pos,
                                                                @Nullable final LevelChunk chunk) {
@@ -99,6 +104,7 @@ public final class VoxelClassifier {
         return cornerSolid ? VoxelNeighborhoodState.CORNER : VoxelNeighborhoodState.FACE;
     }
 
+    /** Whether the neighbour one step along this axis is a solid full block, for the burial test. */
     private static boolean solidFullBlock(final LevelAccelerator level,
                                           final BlockPos.MutableBlockPos cursor,
                                           final BlockPos pos,

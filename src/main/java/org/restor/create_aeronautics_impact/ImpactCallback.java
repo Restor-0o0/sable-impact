@@ -22,6 +22,21 @@ import org.joml.Vector3d;
 
 import java.util.Arrays;
 
+/**
+ * What happens when Sable's solver reports that something hit something.
+ *
+ * <p>The mod's main entry point, and the only one that sees a real contact: the {@code BlockMixin} hands every
+ * block in the game this one instance, so every collision between a physics body and a block arrives here.
+ * That makes it the hottest code in the mod by a wide margin - a hull ploughing a hillside can report
+ * thousands of contacts in a tick - and most of what is written here is about deciding not to look.
+ *
+ * <p>It never breaks anything itself. Blocks are queued into {@link PendingBreaks} and applied after the
+ * physics step, because this runs from inside Rapier's step and setting a block re-bakes colliders through
+ * that same native library.
+ *
+ * <p><b>Runs inside the solver step, on the server thread.</b> The mutable state here - the tick rations, the
+ * plot cache, the contact tracker - is written without synchronisation on that basis.
+ */
 public final class ImpactCallback implements BlockSubLevelCollisionCallback {
 
     public static final ImpactCallback INSTANCE = new ImpactCallback();
@@ -41,6 +56,13 @@ public final class ImpactCallback implements BlockSubLevelCollisionCallback {
         forgetPlots();
     }
 
+    /**
+     * Sable's entry point, wrapped only so the contact phase can be timed.
+     *
+     * @param impactPosition where the two met, in the plot space of whichever sub-level owns the hit block,
+     *                       or in world space when that block is plain terrain.
+     * @param impactVelocity the closing speed along the contact normal, in blocks per second.
+     */
     @Override
     public CollisionResult sable$onCollision(final BlockPos hitBlockPos,
                                              @Nullable final BlockPos otherHitBlockPos,
@@ -54,6 +76,21 @@ public final class ImpactCallback implements BlockSubLevelCollisionCallback {
         }
     }
 
+    /**
+     * One contact, decided.
+     *
+     * <p>Reads top to bottom as a series of ways out, cheapest first, because on a busy tick almost every
+     * contact leaves by one of them. What survives to the bottom is a real impact between two known blocks:
+     * {@link ImpactResolver} picks which side gives way, the loser is queued, the winner is charged wear, and
+     * the contact is dropped only if the hull punched clean through.
+     *
+     * @param otherHitBlockPos the block on the other body, or null when the other body is not a sub-level -
+     *                         that is a contraption block hitting static terrain, which is handled from the
+     *                         terrain block's own call where both sides are known at once.
+     * @return {@link CollisionResult#NONE} to let Sable resolve the contact as it normally would, which is
+     *         also what every early return means: declining to break something never means declining to be
+     *         stopped by it.
+     */
     private CollisionResult collide(final BlockPos hitBlockPos,
                                     @Nullable final BlockPos otherHitBlockPos,
                                     final Vector3d impactPosition,
@@ -217,6 +254,12 @@ public final class ImpactCallback implements BlockSubLevelCollisionCallback {
         }
     }
 
+    /**
+     * The decision proper, split from {@link #needsOwnVoxel} so the timing wrapper has a single return.
+     *
+     * <p>The order matters for cost: a block Sable would classify on its own terms anyway is answered before
+     * the six neighbour lookups, since those would only arrive at the answer it already had.
+     */
     private static boolean keepsVoxel(final BlockState state, final BlockGetter level, final BlockPos pos) {
         final BlockSubLevelCollisionCallback callback = BlockWithSubLevelCollisionCallback.sable$getCallback(state);
         if (callback == null) {
@@ -240,6 +283,7 @@ public final class ImpactCallback implements BlockSubLevelCollisionCallback {
         return !isWalledIn(level, pos);
     }
 
+    /** Whether all six neighbours are solid full blocks, meaning nothing can reach this one to hit it. */
     private static boolean isWalledIn(final BlockGetter level, final BlockPos pos) {
         final BlockPos.MutableBlockPos cursor = new BlockPos.MutableBlockPos();
         for (final Direction direction : Direction.values()) {
@@ -256,6 +300,16 @@ public final class ImpactCallback implements BlockSubLevelCollisionCallback {
         return true;
     }
 
+    /**
+     * How much the two bodies' weight makes this impact worse, as a multiplier around one.
+     *
+     * <p>Built on reduced mass rather than on either body's own: what a collision has to spend is set by both
+     * sides, and a heavy hull hitting a light one is the light one's collision. Terrain is the infinite-mass
+     * limit of the same expression, which is why it needs no special case beyond the infinity.
+     *
+     * <p>The larger of the two contact areas is used, because pressure is what the mass model is really
+     * about and the wider footprint is the one spreading the load.
+     */
     private double massFactor(final ImpactConfig.Tuning tuning,
                               @Nullable final ServerSubLevel hitSubLevel,
                               final ServerSubLevel otherSubLevel,
@@ -283,6 +337,7 @@ public final class ImpactCallback implements BlockSubLevelCollisionCallback {
                 tuning.massFactorMax());
     }
 
+    /** The hull's mass, or zero when Sable's tracker has nothing usable - which reads as "no mass bonus". */
     private static double massOf(final ServerSubLevel subLevel) {
         final MassData mass = subLevel.getMassTracker();
         return mass == null || mass.isInvalid() ? 0.0 : mass.getMass();
@@ -310,11 +365,19 @@ public final class ImpactCallback implements BlockSubLevelCollisionCallback {
         return resolved;
     }
 
+    /**
+     * Empties the plot cache.
+     *
+     * <p>Done every tick rather than on any event, because plots are reused: a sub-level that is removed
+     * hands its plot to the next contraption, and a stale entry would credit the new one's contacts to a
+     * body that no longer exists.
+     */
     private void forgetPlots() {
         Arrays.fill(this.plotKeys, Long.MIN_VALUE);
         Arrays.fill(this.plots, null);
     }
 
+    /** Resets the per-tick rations and the plot cache when the game time has moved on. */
     private void rollTick(final long now) {
         if (now != this.budgetTick) {
             this.budgetTick = now;
@@ -324,6 +387,12 @@ public final class ImpactCallback implements BlockSubLevelCollisionCallback {
         }
     }
 
+    /**
+     * Whether this tick has already queued as many breaks as it is allowed.
+     *
+     * <p>Passed into {@link ImpactResolver} rather than checked here, so that running out of budget and being
+     * too slow to break anything take the same path out.
+     */
     private boolean budgetExhausted(final ImpactConfig.Tuning tuning) {
         return this.destroyedThisTick >= tuning.maxBlocksPerTick();
     }

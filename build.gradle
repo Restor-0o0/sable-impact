@@ -7,8 +7,19 @@ plugins {
 version = mod_version
 group = mod_group_id
 
+// A build variant is a set of config defaults, not a different mod: same id, same version, same code.
+// It exists so a pack can ship one jar rather than a jar plus instructions for editing a toml.
+var variant = (project.findProperty('build_variant') ?: '').toString().toLowerCase()
+var variantName = variant.isEmpty()
+        ? mod_name
+        : mod_name + ' (' + variant.substring(0, 1).toUpperCase() + variant.substring(1) + ')'
+
 base {
     archivesName = mod_id
+}
+
+tasks.named('jar', Jar) {
+    archiveClassifier = variant
 }
 
 java.toolchain.languageVersion = JavaLanguageVersion.of(21)
@@ -85,7 +96,7 @@ var generateModMetadata = tasks.register('generateModMetadata', ProcessResources
             sable_companion_version_range: sable_companion_version_range,
             aeronautics_version_range    : aeronautics_version_range,
             mod_id                 : mod_id,
-            mod_name               : mod_name,
+            mod_name               : variantName,
             mod_license            : mod_license,
             mod_version            : mod_version,
             mod_authors            : mod_authors,

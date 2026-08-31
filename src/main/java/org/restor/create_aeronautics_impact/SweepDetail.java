@@ -27,8 +27,23 @@ public final class SweepDetail {
     private static final int MIN_STEPS = 2;
     private static final int MAX_STEPS = 96;
 
-    /** The shipped defaults, and what the ladder reads as until the config has been through it. */
+    /** The shipped default finest rung, and what the ladder reads as until the config has been through it. */
     public static final int FINEST_DEFAULT = 0;
+
+    /**
+     * The shipped default travel per lookahead window past which a hull is swept coarsely whatever the
+     * server is doing.
+     *
+     * <p>Precision costs the most exactly where it is worth the least. A hull creeping into a wall wants an
+     * answer good to half a block, because half a block is most of what it will do this second; a hull
+     * arriving at sixty metres a second covers six blocks in the same window and is going to leave a hole
+     * either way. Cost, meanwhile, runs the other way: the faster it goes the longer the swept region and the
+     * longer each rewind, so the tick that can least afford the detail is the one being charged the most
+     * for it.
+     *
+     * <p>Two blocks of travel is twenty metres a second, comfortably above anything under its own power and
+     * comfortably below anything that has been falling for a while.
+     */
     public static final double COARSE_TRAVEL_DEFAULT = 2.0;
 
     private static volatile int finest = FINEST_DEFAULT;
@@ -45,26 +60,26 @@ public final class SweepDetail {
         coarseTravel = coarseAt;
     }
 
-    /**
-     * The travel per lookahead window past which a hull is swept coarsely whatever the server is doing.
-     *
-     * <p>Precision costs the most exactly where it is worth the least. A hull creeping into a wall wants an
-     * answer good to half a block, because half a block is most of what it will do this second; a hull
-     * arriving at sixty metres a second covers six blocks in the same window and is going to leave a hole
-     * either way. Cost, meanwhile, runs the other way: the faster it goes the longer the swept region and the
-     * longer each rewind, so the tick that can least afford the detail is the one being charged the most
-     * for it.
-     *
-     * <p>Two blocks of travel is twenty metres a second, comfortably above anything under its own power and
-     * comfortably below anything that has been falling for a while.
-     */
     private SweepDetail() {
     }
 
+    /**
+     * Half the width of the cube one sample asks about, at this rung.
+     *
+     * <p>Paired with {@link #steps}: spacing and width are two halves of one decision, because samples that
+     * stop overlapping stop being a swept path and start being a row of holes with gaps between them.
+     */
     public static double clip(final int level) {
         return CLIP[rung(level)];
     }
 
+    /**
+     * How many samples a rewind over this much travel is broken into, at this rung.
+     *
+     * <p>Clamped at both ends. The floor is what keeps a hull that has barely moved from being asked about
+     * once and missing the block it is halfway into; the ceiling is what keeps something falling at terminal
+     * velocity from turning one tick into a hundred probes.
+     */
     public static int steps(final double travel, final int level) {
         return Math.clamp((long) Math.ceil(travel * DENSITY[rung(level)]), MIN_STEPS, MAX_STEPS);
     }
@@ -95,6 +110,12 @@ public final class SweepDetail {
         return level < 3;
     }
 
+    /**
+     * The rung a request for this level actually lands on.
+     *
+     * <p>Everything public here goes through it, so the floor from {@code sweepFinestDetail} is applied in
+     * one place and cannot be walked around by asking for a level directly.
+     */
     private static int rung(final int level) {
         return Math.clamp(level, finest, LEVELS - 1);
     }

@@ -25,6 +25,12 @@ public final class BlockScatter {
     private BlockScatter() {
     }
 
+    /**
+     * Breaks a terrain block, throwing it clear as debris if this tick can still afford one.
+     *
+     * <p>Debris flies away from where it was hit rather than along the hull's travel: the impact point is
+     * inside the hull, so away from it is out of the hole, which is where the block has anywhere to go.
+     */
     public static void shatter(final ServerLevel level,
                                final BlockPos pos,
                                final BlockState state,
@@ -45,6 +51,13 @@ public final class BlockScatter {
         debris.setDeltaMovement(dir.x * speed, dir.y * speed + 0.15, dir.z * speed);
     }
 
+    /**
+     * The same for a block belonging to a contraption, which lives in the plotgrid rather than in the world.
+     *
+     * @param plotPos             where the block actually is, tens of thousands of blocks out in the
+     *                            plotgrid, which is what the entity has to be created from.
+     * @param worldImpactPosition where the player saw the crash, which is where it is then moved to.
+     */
     public static void shatterContraptionBlock(final ServerLevel level,
                                                final BlockPos plotPos,
                                                final BlockState state,
@@ -102,6 +115,12 @@ public final class BlockScatter {
         level.setBlock(pos, Blocks.AIR.defaultBlockState(), QUIET_REMOVAL);
     }
 
+    /**
+     * Whether this break gets to be a falling block, and books the ration slot if so.
+     *
+     * <p>Block entities are excluded outright: a falling block entity carries no block entity data, so
+     * throwing a chest would quietly empty it.
+     */
     private static boolean scatters(final ServerLevel level,
                                     final BlockState state,
                                     final double speed,
@@ -121,6 +140,7 @@ public final class BlockScatter {
         return true;
     }
 
+    /** Resets both rations when the game time moves on. Shared across levels; the counters are per tick. */
     private static void rollOver(final ServerLevel level) {
         final long now = level.getGameTime();
         if (now != tick) {
@@ -130,6 +150,7 @@ public final class BlockScatter {
         }
     }
 
+    /** Away from the impact point, jittered, so a wall does not come apart in one flat sheet. */
     private static Vec3 escapeDirection(final BlockPos pos, final Vector3d impactPosition, final ServerLevel level) {
         final Vec3 away = new Vec3(
                 pos.getX() + 0.5 - impactPosition.x,

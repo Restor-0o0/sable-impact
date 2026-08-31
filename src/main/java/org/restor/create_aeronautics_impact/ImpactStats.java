@@ -58,6 +58,7 @@ public final class ImpactStats {
     private static final LongAdder[] PHASE_NANOS = adders(Phase.values().length);
     private static final LongAdder[] PHASE_CALLS = adders(Phase.values().length);
 
+    /** A filled array, because {@code new LongAdder[n]} is an array of nulls and every slot is written to. */
     private static LongAdder[] adders(final int count) {
         final LongAdder[] made = new LongAdder[count];
         Arrays.setAll(made, index -> new LongAdder());
@@ -93,6 +94,7 @@ public final class ImpactStats {
         return enabled() ? System.nanoTime() : 0L;
     }
 
+    /** Charges the time since {@code start} to a phase, and counts the call. A zero start is not measured. */
     public static void since(final Phase phase, final long start) {
         if (start != 0L) {
             PHASE_NANOS[phase.ordinal()].add(System.nanoTime() - start);
@@ -111,6 +113,7 @@ public final class ImpactStats {
     private static final int VOXEL_SAMPLE = 64;
     private static int voxelSeen;
 
+    /** @return a start time on one call in {@link #VOXEL_SAMPLE}, or 0 on the rest. Always counts the call. */
     public static long markVoxel() {
         if (!enabled()) {
             return 0L;
@@ -119,6 +122,7 @@ public final class ImpactStats {
         return (++voxelSeen & (VOXEL_SAMPLE - 1)) == 0 ? System.nanoTime() : 0L;
     }
 
+    /** Charges a sampled voxel check, scaled back up to stand for the calls that were not timed. */
     public static void sinceVoxel(final long start) {
         if (start != 0L) {
             PHASE_NANOS[Phase.VOXEL.ordinal()].add((System.nanoTime() - start) * VOXEL_SAMPLE);
@@ -132,18 +136,32 @@ public final class ImpactStats {
         }
     }
 
+    /** Blocks the carve pass actually broke, as against the ones crush merely looked at. */
     public static void addCarved(final int blocks) {
         if (enabled()) {
             carveBroken += blocks;
         }
     }
 
+    /**
+     * Blocks the crush pass read.
+     *
+     * <p>The one figure that says whether crushing is being asked to look at more ground than it should be:
+     * crush reads a whole footprint every pass and breaks almost none of it, so its cost tracks this and not
+     * the break count beside it.
+     */
     public static void addCrushScan(final int blocks) {
         if (enabled()) {
             crushScanned += blocks;
         }
     }
 
+    /**
+     * Whether anything here is being recorded.
+     *
+     * <p>Checked before every clock read rather than only at the log, so with {@code logPerformance} off the
+     * instrumentation costs a boolean and no {@code nanoTime} calls at all.
+     */
     public static boolean enabled() {
         return ImpactConfig.SPEC.isLoaded() && ImpactConfig.LOG_PERFORMANCE.get();
     }
@@ -160,6 +178,7 @@ public final class ImpactStats {
         }
     }
 
+    /** One sweep, timed. A sweep that read no blocks does not count as a tick the mod was active on. */
     public static void addSweep(final long nanos, final int scannedBlocks) {
         sweepNanos += nanos;
         scanned += scannedBlocks;
@@ -171,6 +190,7 @@ public final class ImpactStats {
         }
     }
 
+    /** The break-applying pass, timed. Separate from the sweep because it runs after the physics step. */
     public static void addBreaks(final long nanos, final int brokenBlocks) {
         breakNanos += nanos;
         broken += brokenBlocks;
@@ -311,6 +331,7 @@ public final class ImpactStats {
         }
     }
 
+    /** Nanoseconds as milliseconds to two places, since every figure in the log is quoted that way. */
     private static String millis(final double nanos) {
         return String.format("%.2f", nanos / 1.0e6);
     }

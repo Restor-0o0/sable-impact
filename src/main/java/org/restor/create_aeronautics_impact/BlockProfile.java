@@ -30,11 +30,25 @@ public record BlockProfile(int generation,
 
     private static volatile int currentGeneration;
 
+    /**
+     * Drops every cached profile by moving the generation on.
+     *
+     * <p>Nothing is walked and nothing is freed: a profile from an older generation fails its own check on
+     * the next read and is rebuilt in place. That matters because the cache lives on block states, which
+     * this class has no list of and no way to enumerate.
+     */
     public static void clearCache() {
         currentGeneration++;
         FALLBACK.clear();
     }
 
+    /**
+     * The profile for a block state, built once per state per config generation.
+     *
+     * <p>{@code level} and {@code pos} are only consulted while building. Every property here is a function
+     * of the state alone - the shape lookups take a position because vanilla's signatures do, not because
+     * the answer varies by it - which is what makes one profile per state correct.
+     */
     public static BlockProfile of(final BlockGetter level, final BlockPos pos, final BlockState state) {
         final int wanted = currentGeneration;
 
@@ -57,6 +71,10 @@ public record BlockProfile(int generation,
         return built;
     }
 
+    /**
+     * Derives a profile: vanilla stats through {@link ImpactResolver}, then whatever
+     * {@link MaterialOverrides} has to say on top.
+     */
     private static BlockProfile build(final int generation,
                                       final BlockGetter level, final BlockPos pos, final BlockState state) {
         final ImpactConfig.Tuning tuning = ImpactConfig.tuning();
@@ -103,13 +121,20 @@ public record BlockProfile(int generation,
         return this.soft || this.fluid;
     }
 
-    // Sable exposes sable:fragile as a Veil RegistryObject, which is not on this mod's compile classpath.
-    // The registry itself is, so the type is resolved by name once and reused.
-    // Resolved on first use rather than in a static initialiser: this class can be loaded from a config
-    // event, which happens before Sable's registry is populated.
+    /**
+     * Sable's {@code sable:fragile} property type, resolved by name.
+     *
+     * <p>Sable exposes it as a Veil {@code RegistryObject}, which is not on this mod's compile classpath;
+     * the registry itself is, so the type is looked up by name once and reused.
+     *
+     * <p>A holder class rather than a static field, so the lookup happens on first use rather than at class
+     * load. This class can be loaded from a config event, which happens before Sable's registry is
+     * populated, and a null there would be baked in for the rest of the session.
+     */
     private static final class Fragile {
         private static final PhysicsBlockPropertyTypes.PhysicsBlockPropertyType<?> TYPE = resolve();
 
+        /** @return the registered type, or null if Sable's registry is not up yet. */
         private static PhysicsBlockPropertyTypes.PhysicsBlockPropertyType<?> resolve() {
             try {
                 return PhysicsBlockPropertyTypes.getPropertyType(
@@ -120,6 +145,12 @@ public record BlockProfile(int generation,
         }
     }
 
+    /**
+     * Whether Sable itself considers this block fragile, before {@code materialOverrides} gets a say.
+     *
+     * <p>False whenever Sable's registry is not up, which is the honest answer: without it there is no
+     * fragile handling to hand the block back to.
+     */
     public static boolean isFragile(final BlockState state) {
         if (Fragile.TYPE == null) {
             return false;
@@ -127,6 +158,7 @@ public record BlockProfile(int generation,
         return Boolean.TRUE.equals(((BlockStateExtension) state).sable$getProperty(Fragile.TYPE));
     }
 
+    /** The block as one side of an impact, fully backed - which is what a contraption's own blocks are. */
     public ImpactResolver.Side side(final double massFactor, final double toughness) {
         return side(massFactor, toughness, 1.0);
     }

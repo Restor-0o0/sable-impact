@@ -32,6 +32,12 @@ import java.util.WeakHashMap;
  */
 public final class PendingBreaks {
 
+    /**
+     * A block that lost its impact and is to be shattered on the tick.
+     *
+     * <p>{@code state} is kept so the tick can check the block is still the one that was hit: a queue filled
+     * over a whole physics step can easily name a block something else has removed since.
+     */
     private record Break(BlockPos pos,
                          BlockState state,
                          Vector3d impact,
@@ -41,6 +47,10 @@ public final class PendingBreaks {
                          boolean contraption) {
     }
 
+    /**
+     * A block that won its impact and is to be worn down for it, with {@code share} being the accumulated
+     * fraction of a break owed for this tick.
+     */
     private record Wear(BlockPos pos,
                         BlockState state,
                         Vector3d impact,
@@ -49,12 +59,14 @@ public final class PendingBreaks {
                         double share,
                         boolean contraption) {
 
+        /** The same block owing more. A record, so adding to it is making another one. */
         private Wear plus(final double more) {
             return new Wear(this.pos, this.state, this.impact, this.impactVelocity,
                     this.resistance, this.share + more, this.contraption);
         }
     }
 
+    /** One tick's worth of queued work for one level: what breaks, what wears, and what each hull owes. */
     private static final class Bucket {
         private final List<Break> breaks = new ArrayList<>();
 
@@ -114,6 +126,12 @@ public final class PendingBreaks {
                         share, contraption));
     }
 
+    /**
+     * Books momentum to be taken off a hull once the step is over.
+     *
+     * <p>Summed per hull rather than applied per block, because braking reads the hull's current velocity and
+     * doing that mid-step would be reading a number the solver is still writing.
+     */
     public static void drag(final ServerLevel level,
                             @Nullable final ServerSubLevel subLevel,
                             final double momentum) {
@@ -186,6 +204,7 @@ public final class PendingBreaks {
         }
     }
 
+    /** Routes to the world or plotgrid break path, which differ in where the debris entity is created. */
     private static void shatter(final ServerLevel level,
                                 final BlockPos pos,
                                 final BlockState state,
@@ -200,6 +219,7 @@ public final class PendingBreaks {
         }
     }
 
+    /** Pays out every hull's accumulated drag for the tick. */
     private static void applyDrag(final Map<ServerSubLevel, Double> drag) {
         for (final Map.Entry<ServerSubLevel, Double> entry : drag.entrySet()) {
             brake(entry.getKey(), entry.getValue());
@@ -245,6 +265,7 @@ public final class PendingBreaks {
 
     private static final Vector3d NO_SPIN = new Vector3d();
 
+    /** The hull's mass, or zero when Sable's tracker has nothing usable - which reads as "do not brake". */
     private static double massOf(final ServerSubLevel subLevel) {
         final MassData mass = subLevel.getMassTracker();
         return mass == null || mass.isInvalid() ? 0.0 : mass.getMass();

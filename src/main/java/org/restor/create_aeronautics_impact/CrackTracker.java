@@ -37,6 +37,12 @@ public final class CrackTracker {
     private int overlaysThisTick;
     private int spallsThisTick;
 
+    /**
+     * One block's accumulated damage, and the overlay stage the client was last told about.
+     *
+     * <p>The stage is kept so an overlay packet is only sent when the picture would actually change: damage
+     * moves continuously and there are ten stages, so most hits change nothing anyone can see.
+     */
     private static final class Crack {
         private double damage;
         private int stage = -1;
@@ -130,6 +136,7 @@ public final class CrackTracker {
         }
     }
 
+    /** Per level, per tick: rolls the effect rations over and runs the decay pass when one is due. */
     public static void tick(final ServerLevel level, final ImpactConfig.Tuning tuning) {
         final CrackTracker tracker = LEVELS.get(level);
         if (tracker != null) {
@@ -138,6 +145,12 @@ public final class CrackTracker {
         }
     }
 
+    /**
+     * Whether damage is being accumulated at all.
+     *
+     * <p>A resilience of one means a hit that would have broken the block still does, so there is nothing to
+     * remember between impacts and the map is not worth keeping.
+     */
     private static boolean cracking(final ImpactConfig.Tuning tuning) {
         return tuning.crackBlocks() && tuning.crackResilience() > 1.0;
     }
@@ -182,6 +195,12 @@ public final class CrackTracker {
         return false;
     }
 
+    /**
+     * Decays every crack and forgets the ones that reach zero, along with any whose block has gone.
+     *
+     * <p>The whole map at once, every {@link #HEAL_INTERVAL} ticks, which is also what bounds it: entries
+     * leave here and nowhere else, so a hull that cracked a hillside and flew off does not keep it forever.
+     */
     private void heal(final ServerLevel level, final ImpactConfig.Tuning tuning) {
         final long now = level.getGameTime();
         if (now - this.healedAt < HEAL_INTERVAL || this.cracks.isEmpty()) {
@@ -232,6 +251,7 @@ public final class CrackTracker {
         level.destroyBlockProgress(breakerId(key), pos, stage);
     }
 
+    /** Tells the client to drop the overlay, if one was ever sent for this block. */
     private static void clearOverlay(final ServerLevel level, final BlockPos pos, final long key, final Crack crack) {
         if (crack.stage >= 0) {
             crack.stage = -1;
@@ -249,6 +269,12 @@ public final class CrackTracker {
         return chunk == null ? null : chunk.getBlockState(pos);
     }
 
+    /**
+     * Resets the per-tick rations when the game time has moved on.
+     *
+     * <p>Called from every entry point rather than from the tick listener alone, because cracking runs from
+     * the break pass as well and a tick with no {@code tick} call would otherwise carry the last one's count.
+     */
     private void rollTick(final long now) {
         if (now != this.budgetTick) {
             this.budgetTick = now;
