@@ -315,6 +315,13 @@ without opening it:
 → `create_aeronautics_impact-1.0.0-fast.jar`, listed as *Create Aeronautics Impact (Fast)*. Same mod id and
 same version, so only one variant can be installed at a time.
 
+## License
+
+[MIT](LICENSE). Include it in any modpack, public or private, without asking.
+
+Sable itself is under the Polyform Shield License and is not bundled here — this mod only compiles against
+its API and resolves it from the author's maven at build time.
+
 ## Branches
 
 - **`v1.0.0`** — the release build.
