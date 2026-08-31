@@ -34,8 +34,8 @@ param(
 
 $ErrorActionPreference = 'Stop'
 
-# One line per shipped jar. A version bump is a rename here and nowhere else.
-$Branches = @('v1.0.0', 'v1.0.0-fast')
+# One line per shipped jar.
+$Branches = @('release', 'fast')
 
 $repo = $PSScriptRoot
 if (-not (Test-Path (Join-Path $repo 'gradlew.bat'))) {

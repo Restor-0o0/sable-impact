@@ -312,7 +312,7 @@ without opening it:
 ./gradlew build -Pbuild_variant=fast
 ```
 
-→ `create_aeronautics_impact-1.0.0-fast.jar`, listed as *Create Aeronautics Impact (Fast)*. Same mod id and
+→ `create_aeronautics_impact-1.0.1-fast.jar`, listed as *Create Aeronautics Impact (Fast)*. Same mod id and
 same version, so only one variant can be installed at a time.
 
 For a release, build every variant in one run:
@@ -338,8 +338,8 @@ its API and resolves it from the author's maven at build time.
 
 ## Branches
 
-- **`v1.0.0`** — the release build.
-- **`v1.0.0-fast`** — the same mod shipped with performance-first defaults. See [`FAST.md`](FAST.md) on that
+- **`release`** — the release build.
+- **`fast`** — the same mod shipped with performance-first defaults. See [`FAST.md`](FAST.md) on that
   branch for what each one costs. Same mod id, so only one of the two jars can be installed at a time.
 
 [`DEVELOPMENT.md`](DEVELOPMENT.md) is the guide for working on the mod itself: file map, entry

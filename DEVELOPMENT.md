@@ -219,13 +219,13 @@ compiles against Sable 2.0.3 and declares `[2.0.1,3.0.0)`.
 the mod list:
 
 ```
-./gradlew build -Pbuild_variant=fast   →  create_aeronautics_impact-1.0.0-fast.jar
+./gradlew build -Pbuild_variant=fast   →  create_aeronautics_impact-1.0.1-fast.jar
                                           "Create Aeronautics Impact (Fast)"
 ```
 
 Same mod id, same version, same code — a variant is a set of config defaults, nothing more. It exists so a
-pack can ship one jar instead of a jar plus instructions for editing a toml. The `v1.0.0-fast` branch is
-exactly the release branch with different defaults in `ImpactConfig` and `build_variant=fast`.
+pack can ship one jar instead of a jar plus instructions for editing a toml. The `fast` branch is exactly
+the release branch with different defaults in `ImpactConfig` and `build_variant=fast`.
 
 **Building every variant.** `build-all.ps1` does the whole release in one run:
 
@@ -270,7 +270,10 @@ the figure that says whether the mod was responsible.
 
 ## Branches
 
-- **`v1.0.0`** — the release build.
-- **`v1.0.0-fast`** — performance-first config defaults. See `FAST.md` on that branch.
+- **`release`** — the release build.
+- **`fast`** — performance-first config defaults. See `FAST.md` on that branch.
+
+Branch names carry no version, so bumping `mod_version` in `gradle.properties` is the whole of a release
+and touches nothing else.
 
 Same mod id, so only one of the two jars can be installed at a time.
