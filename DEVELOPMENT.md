@@ -51,10 +51,14 @@ Sable solver step
 LevelTickEvent.Post
   ├─ PendingBreaks.onLevelTick
   │    ├─ CrackTracker.hit / .wear      accumulated damage; may say "not yet"
-  │    ├─ BlockScatter.shatter          the block finally leaves the world
+  │    ├─ BlockScatter.shatter          the block finally leaves the world, as debris or not at all
   │    ├─ CrackTracker.spall            neighbours take a fraction
   │    └─ PendingBreaks.brake           the hull pays for it in speed
   └─ HullSweeper.onLevelTick            everything the solver never reported
+
+FallingBlockEntity.tick                 (once per piece of debris, until it lands)
+  └─ FallingBlockEntityMixin
+       └─ BlockScatter.settle           where a piece that could not be placed actually goes
 ```
 
 The gap in the middle is the important part. A contact only ever writes into `PendingBreaks`; the tick
@@ -81,6 +85,7 @@ pass is stopped by it exactly once instead of finding the ground gone mid-step.
 | `Backing.java` | How much material stands behind and beside a struck face, in the world or in a hull's own plot. Memoised, read from the physics thread. |
 | `PlotProbe.java` | "Is this point inside one of the hull's blocks?" — the single most repeated question in the mod. |
 | `ProfileHolder.java` | The interface `BlockStateProfileMixin` implements, so a state can hold its own profile. |
+| `DebrisHolder.java` | The same for `FallingBlockEntityMixin`, so an entity can say this mod threw it. |
 
 **Acting on it**
 
@@ -103,6 +108,7 @@ pass is stopped by it exactly once instead of finding the ground gone mid-step.
 | `ImpactStats.java` | What the mod costs the tick, printed on demand (`logPerformance`). |
 | `mixin/BlockMixin.java` | Claims every block in the game for `ImpactCallback`. |
 | `mixin/BlockStateProfileMixin.java` | Adds the profile field to `BlockState`. |
+| `mixin/FallingBlockEntityMixin.java` | Gives debris this mod threw somewhere to land when the spot it came down in is taken. |
 | `mixin/VoxelNeighborhoodStateMixin.java` | Routes collider classification through `VoxelClassifier`. |
 
 `src/test/java/…` — `ImpactResolverTest` (the bulk of it), `SweepDetailTest`, `BackingTest`.
@@ -148,6 +154,10 @@ repopulates them.
 `VoxelNeighborhoodStateMixin`'s two injections are both `require = 0`. They are optimisations: a Sable
 release that reshapes `getState` should cost the merge, not the game. `BlockMixin` and
 `BlockStateProfileMixin` are not optional — without them the mod does nothing at all.
+
+`FallingBlockEntityMixin` sits in between. Its two injections are into vanilla's `FallingBlockEntity.tick`,
+which does not move between patch releases, and losing them costs only the landing search: debris still
+flies, it just disappears when it comes down somewhere occupied, the way a vanilla falling block does.
 
 ### Declining a contact never means declining to be stopped by it
 
@@ -202,7 +212,9 @@ Passes live in `HullSweeper.sweep`, in the per-hull loop. A new one needs:
   gated on the detail rung nor given up on, only slowed.
 
 Blocks are removed through `BlockScatter`, never through `level` directly: the effect rations and the
-`blockUpdates` setting live there.
+`blockUpdates` setting live there. Debris is the same class in the other direction — `settle` is the only
+place a block is written back on landing, and it is reached from the falling block's own tick rather than
+from anything on the impact path.
 
 ## Building and testing
 
@@ -219,7 +231,7 @@ compiles against Sable 2.0.3 and declares `[2.0.1,3.0.0)`.
 the mod list:
 
 ```
-./gradlew build -Pbuild_variant=fast   →  create_aeronautics_impact-1.0.2-fast.jar
+./gradlew build -Pbuild_variant=fast   →  create_aeronautics_impact-1.1.0-fast.jar
                                           "Create Aeronautics Impact (Fast)"
 ```
 

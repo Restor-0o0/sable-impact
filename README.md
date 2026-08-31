@@ -21,11 +21,14 @@ speed for every block it takes.
   heals if it is left alone.
 - **Boring.** Above a speed threshold the hull cuts a tunnel rather than skidding, giving up a share of its
   momentum for every block removed.
+- **Debris.** Broken blocks are thrown clear as falling blocks and go looking for somewhere to sit when they
+  land, instead of vanishing the moment the spot they came down in happens to be taken. See
+  [Debris](#debris-what-flies-and-where-it-lands).
 - **A tick budget.** The whole sweep runs under a wall-clock ceiling and gives up cleanly when it runs out,
   and the fleet is served round-robin so no hull starves.
 
-Blocks removed are dropped, scattered as falling blocks, or removed silently, depending on how much of the
-tick's effect ration is left.
+Blocks removed are thrown as debris, dropped, or removed silently, depending on how much of the tick's
+rations is left.
 
 ## Requirements
 
@@ -154,6 +157,114 @@ Ordered by how much they save, and by how visible the cost is:
 pass. It is worth turning on exactly once: when the game hitches, it is what says whether the hitch is here
 or somewhere else in the pack.
 
+## Debris: what flies, and where it lands
+
+A crash that leaves a clean hole does not look like a crash. This chapter is about the other half of an
+impact: the blocks that come *out* of the hole, how many of them there are, how far they go, and whether
+they are still there afterwards.
+
+Every setting named here lives in the `[debris]` section of the config file.
+
+```toml
+[debris]
+	scatterChance = 0.5
+	contraptionScatterChance = 0.85
+	maxScatterPerTick = 96
+	scatterVelocityScale = 0.25
+	scatterUpwardKick = 0.15
+	landingSearch = 2
+	landingNeedsFloor = true
+	lifetimeTicks = 200
+	dropWhenLost = true
+	damagePerBlock = 0.0
+	damageMax = 40
+```
+
+### How many blocks fly
+
+A broken block has two possible ends: it is thrown as a piece of debris, or it is simply gone. Three
+settings decide which, and they are asked in this order.
+
+**`scatterChance`** — the fraction of broken **terrain** blocks that are thrown. `1.0` throws everything the
+per-tick cap can still afford, which is what to set if a crater should be ringed by what came out of it. `0`
+turns terrain debris off and leaves clean holes.
+
+**`contraptionScatterChance`** — the same fraction for a **contraption's own** blocks, and the reason the two
+are separate settings. They are not the same wish. A hillside that keeps its rubble is scenery, and there is
+an enormous amount of it; a ship shedding its hull is the thing the player is actually watching, and there
+are far fewer of those blocks. A piece of hull that vanishes reads as the mod failing to do anything, so this
+one is set higher by default and is the one to raise first.
+
+**`maxScatterPerTick`** — the hard cap, and the number that keeps the two above from being a server killer. A
+hull ploughing a hillside breaks blocks by the hundred, and each one turned into debris is an entity that has
+to fall, land, write a block back and be sent to every client in range. Blocks past the cap still break —
+they just vanish rather than fly. Raise the chances *and* this together, or the chances alone will do very
+little.
+
+Two kinds of block are never thrown, whatever these are set to: blocks with a block entity — a chest thrown
+as debris would quietly empty itself — and anything holding a fluid.
+
+### How far they go
+
+**`scatterVelocityScale`** — how hard a piece is thrown, measured against how far the impact overshot what
+the block could take. A block that barely lost drops at its own feet; one hit far harder than it could stand
+is flung. Raising this widens the field the wreckage ends up spread over. Much past `1.0` blocks are thrown
+far enough to land clear of the crash and stop reading as part of it.
+
+**`scatterUpwardKick`** — a flat upward push given to every piece on top of whatever direction the impact
+threw it. Without some of this, a block broken by a downward hit — which is most of them, since most crashes
+are landings — is driven straight back into the ground and settles roughly where it stood, which looks like
+nothing happened to it at all.
+
+### Where they land
+
+This is the part vanilla does badly, and the reason wreckage used to disappear.
+
+A vanilla falling block has exactly one position it is willing to occupy: the block it happens to be standing
+in the moment it touches down. If anything is already there — the wall it was thrown against, the slab it
+rolled onto, the hole it just came out of — it gives up, becomes an item, and is gone. That is a perfectly
+good rule for gravel, which falls straight down a column it has just vacated. It is a bad one for a block
+that was thrown sideways into a hillside.
+
+**`landingSearch`** — how far a piece may look for somewhere else to put itself when that happens. The search
+is a widening shell around where it came down, lowest position of each shell first, so wreckage settles
+downward and piles rather than stacking. At `2` almost everything finds a home within a block or two of where
+it landed. It is not free — each step out is a shell of positions to test — but it is only ever paid by the
+pieces that *failed* to land, which is a small share of a crash. `0` restores vanilla's behaviour outright.
+
+**`landingNeedsFloor`** — whether a spot found by that search has to have something solid under it. On,
+debris piles up on the ground and against walls the way rubble does. Off, a piece takes the first free
+position it finds, which fills in overhangs and leaves blocks standing in mid-air.
+
+**`lifetimeTicks`** — how long a piece may stay in the air before it is made to come down wherever it has got
+to. `200` is ten seconds, far longer than anything thrown by an impact needs; it is a backstop against debris
+flung out over an ocean or off a cliff ticking for as long as the chunk stays loaded. `0` leaves vanilla's own
+limit as the only one.
+
+**`dropWhenLost`** — what becomes of a piece that found nowhere at all to be placed. On it drops as an item,
+off it is gone. This is only reached once the search has already failed, so it is a handful of blocks per
+crash rather than all of them — though a crash inside a cave with this on can still leave a lot of items on
+the floor.
+
+### What they do on the way down
+
+**`damagePerBlock`** and **`damageMax`** — fall damage debris deals to whatever it lands on, per block
+fallen and in total, exactly the way an anvil does. `0` — the default — makes debris harmless to walk under.
+Anything much above `0.5` makes standing near a crash lethal, which is honest, and is also how a player loses
+an inventory to scenery.
+
+### If it is costing too much
+
+In order of how much they save:
+
+| Change | Effect |
+|---|---|
+| `maxScatterPerTick` down | The one real limit. Everything else only changes what is competing for these slots. |
+| `contraptionScatterChance` down | Fewer hull pieces. Keep this above `scatterChance`; it is the debris that is actually being looked at. |
+| `landingSearch = 0` | Drops the search entirely. Wreckage goes back to disappearing when it lands somewhere occupied. |
+| `dropWhenLost = false` | No items from failed landings. Worth it on a server where a crash site turns into a carpet of drops. |
+| `lifetimeTicks` down | Fewer entities alive at once when debris is being thrown a long way. |
+
 ## Reference
 
 ### Impact
@@ -243,16 +354,31 @@ How a block's strength is derived from its vanilla stats, before `materialOverri
 | `breakDragMass` | `2.0` | Mass (kg) a contraption must drag up to its own speed per block punched clean through. `0` is free digging. |
 | `breakDragMax` | `0.12` | The largest share of its speed a contraption may lose to breaking blocks in one tick. `1` restores dead stops. |
 
-### Breaking, drops and debris
+### Breaking and drops
 
 | Option | Default | |
 |---|---|---|
 | `maxBlocksPerTick` | `512` | Hard cap on blocks destroyed by impacts per level per tick. |
 | `dropItems` | `false` | Whether shattered blocks drop their items. |
-| `scatterChance` | `0.2` | Fraction of broken blocks that fly off as falling-block entities. The most expensive thing an impact can do. |
-| `maxScatterPerTick` | `32` | Hard cap on debris entities per level per tick. Blocks past it still break. |
-| `scatterVelocityScale` | `0.25` | How fast debris is thrown, relative to how far the impact overshot. |
 | `maxBreakEffectsPerTick` | `24` | Hard cap on breaks that play sound and particles. Breaks past it are silent and drop nothing. |
+
+### Debris
+
+Everything under `[debris]`. The chapter on it is [above](#debris-what-flies-and-where-it-lands).
+
+| Option | Default | |
+|---|---|---|
+| `scatterChance` | `0.5` | Fraction of broken **terrain** blocks that fly off as debris rather than simply vanishing. |
+| `contraptionScatterChance` | `0.85` | The same for a **contraption's own** blocks. |
+| `maxScatterPerTick` | `96` | Hard cap on debris entities per level per tick. Blocks past it still break, they just vanish. |
+| `scatterVelocityScale` | `0.25` | How hard debris is thrown, relative to how far the impact overshot the block. |
+| `scatterUpwardKick` | `0.15` | A flat upward push added to every piece, so a downward hit does not drive its debris into the floor. |
+| `landingSearch` | `2` | How far a piece may look for somewhere to put itself when it cannot be placed where it landed. `0` is vanilla behaviour. |
+| `landingNeedsFloor` | `true` | Whether such a spot has to have something solid under it. |
+| `lifetimeTicks` | `200` | How long a piece may stay in the air before it is made to come down wherever it is. `0` leaves only vanilla's limit. |
+| `dropWhenLost` | `true` | What becomes of a piece that found nowhere at all: an item, or nothing. |
+| `damagePerBlock` | `0.0` | Fall damage debris deals to what it lands on, per block fallen, the way an anvil does. `0` is harmless. |
+| `damageMax` | `40` | Ceiling on that damage from any one piece. |
 
 ### Sweeps
 
@@ -318,7 +444,7 @@ without opening it:
 ./gradlew build -Pbuild_variant=fast
 ```
 
-→ `create_aeronautics_impact-1.0.2-fast.jar`, listed as *Create Aeronautics Impact (Fast)*. Same mod id and
+→ `create_aeronautics_impact-1.1.0-fast.jar`, listed as *Create Aeronautics Impact (Fast)*. Same mod id and
 same version, so only one variant can be installed at a time.
 
 For a release, build every variant in one run:

@@ -430,17 +430,6 @@ public final class ImpactConfig {
                     "been looked at and the rest of it rides on terrain that should have given way.")
             .defineInRange("maxBlocksPerTick", 512, 1, 8192);
 
-    public static final ModConfigSpec.DoubleValue SCATTER_CHANCE = BUILDER
-            .comment("Fraction of broken blocks that fly off as falling-block entities instead of just shattering.",
-                    "Each one is a ticking entity that lands and writes a block back, so this is the single most",
-                    "expensive thing an impact can do; maxScatterPerTick is what keeps it bounded.")
-            .defineInRange("scatterChance", 0.2, 0.0, 1.0);
-
-    public static final ModConfigSpec.IntValue MAX_SCATTER_PER_TICK = BUILDER
-            .comment("Hard cap on debris entities spawned per level per tick. Blocks past the cap still break,",
-                    "they just vanish instead of flying.")
-            .defineInRange("maxScatterPerTick", 32, 0, 4096);
-
     public static final ModConfigSpec.IntValue MAX_BREAK_EFFECTS_PER_TICK = BUILDER
             .comment("Hard cap on breaks per level per tick that play the block-break sound and particles. Every",
                     "one of those is a packet to every player in range, and a hull ploughing terrain produces",
@@ -448,9 +437,91 @@ public final class ImpactConfig {
                     "because the first ones are not. Silent breaks drop nothing regardless of dropItems.")
             .defineInRange("maxBreakEffectsPerTick", 24, 0, 4096);
 
+    static {
+        BUILDER.comment("What a broken block does on its way out: whether it flies, how hard it is thrown, and",
+                        "where it comes to rest. A block that is not thrown is simply gone, so what is set here",
+                        "is the difference between a crash that scatters wreckage and one that leaves a clean",
+                        "hole. It is also the most expensive part of the mod - a piece of debris is a ticking",
+                        "entity that has to fall, land and write a block back - so all of it is rationed.",
+                        "Terrain and contraptions are asked separately, because they are not the same wish: a",
+                        "hillside that keeps its rubble is scenery, a ship shedding its hull is the crash.")
+                .push("debris");
+    }
+
+    public static final ModConfigSpec.DoubleValue SCATTER_CHANCE = BUILDER
+            .comment("Fraction of broken terrain blocks that fly off as debris instead of simply vanishing.",
+                    "1.0 throws everything the per-tick cap can afford, which is what to reach for if a crater",
+                    "should be surrounded by what came out of it. 0 turns terrain debris off.")
+            .defineInRange("scatterChance", 0.5, 0.0, 1.0);
+
+    public static final ModConfigSpec.DoubleValue CONTRAPTION_SCATTER_CHANCE = BUILDER
+            .comment("The same for a contraption's own blocks. Higher than terrain by default: a ship losing its",
+                    "hull is the thing being watched, there are far fewer of these blocks than there is ground",
+                    "being ploughed, and a piece of hull that vanishes reads as the mod failing to do anything",
+                    "rather than as a break.")
+            .defineInRange("contraptionScatterChance", 0.85, 0.0, 1.0);
+
+    public static final ModConfigSpec.IntValue MAX_SCATTER_PER_TICK = BUILDER
+            .comment("Hard cap on debris entities spawned per level per tick. Blocks past the cap still break,",
+                    "they just vanish instead of flying. This is the number that keeps the two chances above",
+                    "from being a server killer: a hull ploughing a hillside breaks blocks by the hundred, and",
+                    "each one turned into an entity has to fall, land, and be sent to every client in range.")
+            .defineInRange("maxScatterPerTick", 96, 0, 4096);
+
     public static final ModConfigSpec.DoubleValue SCATTER_VELOCITY_SCALE = BUILDER
-            .comment("How fast debris is thrown, relative to how much the impact overshot the block's resistance.")
+            .comment("How fast debris is thrown, relative to how much the impact overshot the block's resistance.",
+                    "Raising it widens the field the wreckage ends up spread over; much past 1.0 blocks are",
+                    "thrown far enough to land clear of the crash and stop looking like part of it.")
             .defineInRange("scatterVelocityScale", 0.25, 0.0, 10.0);
+
+    public static final ModConfigSpec.DoubleValue SCATTER_UPWARD_KICK = BUILDER
+            .comment("A flat upward push given to every piece of debris on top of the direction the impact threw",
+                    "it. Without some of this a block broken by a downward hit is driven straight back into the",
+                    "ground and settles where it stood, which looks like nothing happened to it.")
+            .defineInRange("scatterUpwardKick", 0.15, 0.0, 2.0);
+
+    public static final ModConfigSpec.IntValue LANDING_SEARCH = BUILDER
+            .comment("How far a piece of debris may look for somewhere to put itself when it comes down",
+                    "somewhere it cannot be placed - into a wall, onto a slab, back into the hole it was thrown",
+                    "out of. A vanilla falling block gives up there and becomes an item or nothing at all, and",
+                    "that is why wreckage disappears. At 2 almost everything finds a home within a block or two",
+                    "of where it landed. Each step out is a shell of positions to test, so this is not free:",
+                    "0 restores vanilla's behaviour outright.")
+            .defineInRange("landingSearch", 2, 0, 8);
+
+    public static final ModConfigSpec.BooleanValue LANDING_NEEDS_FLOOR = BUILDER
+            .comment("Whether a spot found by that search has to have something solid under it. On, debris piles",
+                    "up on the ground and against walls the way rubble does. Off, it takes the first free",
+                    "position it finds, which fills overhangs in and leaves blocks standing in mid-air.")
+            .define("landingNeedsFloor", true);
+
+    public static final ModConfigSpec.IntValue LIFETIME_TICKS = BUILDER
+            .comment("How long a piece of debris may stay in the air before it is made to come down wherever it",
+                    "has got to, in ticks. 200 is ten seconds, far longer than anything thrown by an impact",
+                    "needs, and is a backstop against debris flung out over an ocean ticking for as long as the",
+                    "chunk stays loaded. 0 leaves vanilla's own limit as the only one.")
+            .defineInRange("lifetimeTicks", 200, 0, 6000);
+
+    public static final ModConfigSpec.BooleanValue DROP_WHEN_LOST = BUILDER
+            .comment("What becomes of a piece of debris that found nowhere at all to be placed: on, it drops as",
+                    "an item, off, it is gone. Only reached once the search above has failed, so this is a",
+                    "handful of blocks per crash rather than all of them - though a crash in a cave with this",
+                    "on can still leave a lot of items lying about.")
+            .define("dropWhenLost", true);
+
+    public static final ModConfigSpec.DoubleValue DEBRIS_DAMAGE_PER_BLOCK = BUILDER
+            .comment("Fall damage debris deals to what it lands on, per block fallen, the way an anvil does. 0",
+                    "makes it harmless. Much above 0.5 makes standing anywhere near a crash lethal, which is",
+                    "honest and is also how a player loses an inventory to scenery.")
+            .defineInRange("damagePerBlock", 0.0, 0.0, 10.0);
+
+    public static final ModConfigSpec.IntValue DEBRIS_DAMAGE_MAX = BUILDER
+            .comment("Ceiling on that damage from any one piece of debris, however far it fell.")
+            .defineInRange("damageMax", 40, 0, 1000);
+
+    static {
+        BUILDER.pop();
+    }
 
     public static final ModConfigSpec.BooleanValue DROP_ITEMS = BUILDER
             .comment("Whether shattered blocks drop their items.")
@@ -809,7 +880,15 @@ public final class ImpactConfig {
                          int maxContactsPerTick,
                          boolean blockUpdates,
                          double hullBackingWeight,
-                         int hullBackingReach) {
+                         int hullBackingReach,
+                         double contraptionScatterChance,
+                         double scatterUpwardKick,
+                         int landingSearch,
+                         boolean landingNeedsFloor,
+                         int lifetimeTicks,
+                         boolean dropWhenLost,
+                         double debrisDamagePerBlock,
+                         int debrisDamageMax) {
 
         /**
          * Reads the whole spec once, applying {@code impactStrength} to the thresholds it eases on the way.
@@ -882,7 +961,15 @@ public final class ImpactConfig {
                     MAX_CONTACTS_PER_TICK.get(),
                     BLOCK_UPDATES.get(),
                     HULL_BACKING_WEIGHT.get(),
-                    HULL_BACKING_REACH.get());
+                    HULL_BACKING_REACH.get(),
+                    CONTRAPTION_SCATTER_CHANCE.get(),
+                    SCATTER_UPWARD_KICK.get(),
+                    LANDING_SEARCH.get(),
+                    LANDING_NEEDS_FLOOR.get(),
+                    LIFETIME_TICKS.get(),
+                    DROP_WHEN_LOST.get(),
+                    DEBRIS_DAMAGE_PER_BLOCK.get(),
+                    DEBRIS_DAMAGE_MAX.get());
         }
 
         /** The lowest speed at which any block, however soft and however heavy the ram, could give way. */

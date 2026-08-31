@@ -3,10 +3,13 @@ package org.restor.create_aeronautics_impact;
 import net.minecraft.core.BlockPos;
 import net.minecraft.server.level.ServerLevel;
 import net.minecraft.world.entity.item.FallingBlockEntity;
+import net.minecraft.world.item.ItemStack;
 import net.minecraft.world.phys.Vec3;
 import net.minecraft.world.level.block.Block;
 import net.minecraft.world.level.block.Blocks;
+import net.minecraft.world.level.block.FallingBlock;
 import net.minecraft.world.level.block.state.BlockState;
+import org.jetbrains.annotations.Nullable;
 import org.joml.Vector3d;
 
 /**
@@ -41,14 +44,13 @@ public final class BlockScatter {
         final double speed = ImpactResolver.scatterSpeed(
                 impactVelocity, resistance, tuning.scatterVelocityScale());
 
-        if (!scatters(level, state, speed, tuning)) {
+        if (!scatters(level, state, speed, tuning.scatterChance(), tuning)) {
             clear(level, pos, tuning.dropItems());
             return;
         }
 
-        final Vec3 dir = escapeDirection(pos, impactPosition, level);
-        final FallingBlockEntity debris = FallingBlockEntity.fall(level, pos, state);
-        debris.setDeltaMovement(dir.x * speed, dir.y * speed + 0.15, dir.z * speed);
+        throwOut(level, FallingBlockEntity.fall(level, pos, state),
+                escapeDirection(pos, impactPosition, level), speed, tuning);
     }
 
     /**
@@ -68,7 +70,7 @@ public final class BlockScatter {
         final double speed = ImpactResolver.scatterSpeed(
                 impactVelocity, resistance, tuning.scatterVelocityScale());
 
-        if (!scatters(level, state, speed, tuning)) {
+        if (!scatters(level, state, speed, tuning.contraptionScatterChance(), tuning)) {
             clear(level, plotPos, tuning.dropItems());
             return;
         }
@@ -79,12 +81,98 @@ public final class BlockScatter {
         debris.moveTo(worldImpactPosition.x, worldImpactPosition.y + 0.5, worldImpactPosition.z);
         debris.setStartPos(BlockPos.containing(worldImpactPosition.x, worldImpactPosition.y, worldImpactPosition.z));
 
-        final Vec3 dir = new Vec3(
+        throwOut(level, debris, new Vec3(
                 level.random.nextDouble() - 0.5,
                 level.random.nextDouble() * 0.5,
-                level.random.nextDouble() - 0.5).normalize();
-        debris.setDeltaMovement(dir.x * speed, dir.y * speed + 0.15, dir.z * speed);
+                level.random.nextDouble() - 0.5).normalize(), speed, tuning);
     }
+
+    /**
+     * Sends one piece of debris on its way, and claims it for this mod on the way out.
+     *
+     * <p>Vanilla's own drop is turned off because the decision has moved: a block that cannot be placed where
+     * it landed is not finished, it is looking for room, and only {@link #settle} gets to say it ran out.
+     */
+    private static void throwOut(final ServerLevel level,
+                                 final FallingBlockEntity debris,
+                                 final Vec3 direction,
+                                 final double speed,
+                                 final ImpactConfig.Tuning tuning) {
+        debris.setDeltaMovement(direction.x * speed,
+                direction.y * speed + tuning.scatterUpwardKick(),
+                direction.z * speed);
+        debris.dropItem = false;
+        if (tuning.debrisDamagePerBlock() > 0.0) {
+            debris.setHurtsEntities((float) tuning.debrisDamagePerBlock(), tuning.debrisDamageMax());
+        }
+        ((DebrisHolder) debris).create_aeronautics_impact$debris(true);
+    }
+
+    /**
+     * Puts a piece of debris somewhere it will fit, once vanilla has decided it will not fit where it landed.
+     *
+     * <p>Called from the falling block's own tick, so it happens at most once per piece and only for the ones
+     * that failed - which is a small share of a crash. The search is a widening shell around where it came
+     * down, lowest position of each shell first, so wreckage settles rather than stacking.
+     */
+    public static void settle(final ServerLevel level, final BlockPos landed, final BlockState state) {
+        final ImpactConfig.Tuning tuning = ImpactConfig.tuning();
+        final BlockPos room = room(level, landed, state, tuning);
+        if (room != null) {
+            level.setBlock(room, state, tuning.blockUpdates() ? Block.UPDATE_ALL : QUIET_PLACEMENT);
+            return;
+        }
+        if (tuning.dropWhenLost() && level.isLoaded(landed)) {
+            Block.popResource(level, landed, new ItemStack(state.getBlock()));
+        }
+    }
+
+    /** The nearest position to {@code landed} this block can occupy, or null if there is none in reach. */
+    @Nullable
+    private static BlockPos room(final ServerLevel level,
+                                 final BlockPos landed,
+                                 final BlockState state,
+                                 final ImpactConfig.Tuning tuning) {
+        final int reach = tuning.landingSearch();
+        final BlockPos.MutableBlockPos cursor = new BlockPos.MutableBlockPos();
+        for (int shell = 0; shell <= reach; shell++) {
+            for (int dy = -shell; dy <= shell; dy++) {
+                for (int dx = -shell; dx <= shell; dx++) {
+                    for (int dz = -shell; dz <= shell; dz++) {
+                        if (Math.max(Math.abs(dx), Math.max(Math.abs(dy), Math.abs(dz))) != shell) {
+                            continue;
+                        }
+                        cursor.set(landed.getX() + dx, landed.getY() + dy, landed.getZ() + dz);
+                        if (fits(level, cursor, state, tuning)) {
+                            return cursor.immutable();
+                        }
+                    }
+                }
+            }
+        }
+        return null;
+    }
+
+    /**
+     * Whether this block can be written at this position: inside the world, in a chunk that is actually
+     * loaded, into something that gives way, and standing on something if it is being asked to.
+     */
+    private static boolean fits(final ServerLevel level,
+                                final BlockPos pos,
+                                final BlockState state,
+                                final ImpactConfig.Tuning tuning) {
+        if (pos.getY() < level.getMinBuildHeight() || pos.getY() >= level.getMaxBuildHeight()
+                || !level.isLoaded(pos)) {
+            return false;
+        }
+        if (!level.getBlockState(pos).canBeReplaced() || !state.canSurvive(level, pos)) {
+            return false;
+        }
+        return !tuning.landingNeedsFloor() || !FallingBlock.isFree(level.getBlockState(pos.below()));
+    }
+
+    /** A placement nobody needs to hear about: the clients are told, the neighbours are not. */
+    private static final int QUIET_PLACEMENT = Block.UPDATE_CLIENTS | Block.UPDATE_KNOWN_SHAPE;
 
     /**
      * What a silent removal tells the world about itself when {@code blockUpdates} is off.
@@ -124,11 +212,12 @@ public final class BlockScatter {
     private static boolean scatters(final ServerLevel level,
                                     final BlockState state,
                                     final double speed,
+                                    final double chance,
                                     final ImpactConfig.Tuning tuning) {
         if (speed <= 0.05
                 || state.hasBlockEntity()
                 || !state.getFluidState().isEmpty()
-                || level.random.nextDouble() >= tuning.scatterChance()) {
+                || level.random.nextDouble() >= chance) {
             return false;
         }
 
