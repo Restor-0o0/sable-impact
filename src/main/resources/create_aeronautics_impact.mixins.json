@@ -1,0 +1,14 @@
+{
+  "required": true,
+  "minVersion": "0.8",
+  "package": "org.restor.create_aeronautics_impact.mixin",
+  "compatibilityLevel": "JAVA_21",
+  "mixins": [
+    "BlockMixin",
+    "BlockStateProfileMixin",
+    "VoxelNeighborhoodStateMixin"
+  ],
+  "injectors": {
+    "defaultRequire": 1
+  }
+}

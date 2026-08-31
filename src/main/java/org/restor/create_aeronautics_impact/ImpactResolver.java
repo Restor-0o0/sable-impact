@@ -1,0 +1,305 @@
+package org.restor.create_aeronautics_impact;
+
+public final class ImpactResolver {
+
+    private ImpactResolver() {
+    }
+
+    /**
+     * How much punishment a block takes, derived from the two numbers vanilla gives every block.
+     *
+     * <p>The two disagree about wood. Mining hardness calls an oak log tougher than stone, because it is
+     * slow to chop and stone is quick to pick; blast resistance calls it three times softer, because it is.
+     * Nothing here is a pickaxe, so the mining number is only a hint at how solid a block is and gets
+     * weighted down accordingly - otherwise a boulder that sinks into bedrock-grade stone comes to rest on a
+     * tree, which is the wrong way round in every sense that matters.
+     */
+    public static double resistance(double destroySpeed, double explosionResistance,
+                                    double explosionResistanceFactor, double hardnessWeight) {
+        if (destroySpeed < 0.0) {
+            return Double.POSITIVE_INFINITY;
+        }
+        return Math.max(destroySpeed * hardnessWeight, explosionResistance * explosionResistanceFactor);
+    }
+
+    /**
+     * Applies the global strength dial to one of the numbers standing between a contraption and the block it
+     * is pushing on.
+     *
+     * <p>Every path here ends in the same shape of comparison - something the hull brings, against something
+     * the block can take - and the numbers on the block's side of it are all thresholds. Dividing them
+     * together moves the whole system at once without disturbing any ratio inside it: terrain keeps its
+     * ordering, a heavy build keeps its advantage over a light one, and crushing keeps its relationship with
+     * ramming. One dial instead of six that have to be kept in step by hand.
+     */
+    public static double eased(double threshold, double strength) {
+        if (strength <= 0.0 || threshold <= 0.0 || Double.isInfinite(threshold)) {
+            return threshold;
+        }
+        return threshold / strength;
+    }
+
+    /**
+     * Pulls the vanilla resistance range in towards itself. Vanilla spans dirt at 0.5 and obsidian at 300,
+     * and feeding that straight into a break speed puts obsidian at hundreds of m/s. An exponent below one
+     * keeps the ordering intact while landing the whole range inside speeds a contraption can actually reach.
+     */
+    /**
+     * How much speed a hull gives up to the blocks it just broke.
+     *
+     * <p>The drag is priced per block, and a hull ploughing terrain meets hundreds of them in one tick, so
+     * the honest total is routinely more motion than the hull has. Handing that over at once is not a hull
+     * being slowed by the ground - it is a hull stopping dead, being picked up by gravity, ploughing, and
+     * stopping dead again, which is a stutter rather than a deceleration. The cap spreads the same debt over
+     * the ticks that follow: nothing is refunded, and a hull that ran into more than it could pay for still
+     * comes to rest, over about a second instead of between two frames.
+     */
+    public static double speedLost(final double momentum,
+                                   final double hullMass,
+                                   final double speed,
+                                   final double maxShare) {
+        if (momentum <= 0.0 || hullMass <= 0.0 || speed <= 0.0) {
+            return 0.0;
+        }
+        return Math.min(momentum / hullMass, speed * maxShare);
+    }
+
+    public static double compress(double resistance, double exponent) {
+        if (exponent >= 1.0 || resistance <= 0.0 || Double.isInfinite(resistance)) {
+            return resistance;
+        }
+        return Math.pow(resistance, exponent);
+    }
+
+    public static double breakSpeed(double resistance, double minImpactSpeed, double hardnessScale) {
+        return minImpactSpeed + hardnessScale * resistance;
+    }
+
+    public static double contactPressure(double mass, int contactBlocks) {
+        if (mass <= 0.0) {
+            return 0.0;
+        }
+        return mass / Math.max(1, contactBlocks);
+    }
+
+    /**
+     * The load a block bears before it gives way, in the same units {@link #contactPressure} is measured in:
+     * mass carried per block of contact.
+     *
+     * <p>This is the half of an impact that speed cannot express. A hull at rest still weighs what it weighs,
+     * and a thing heavy enough on a small enough footprint destroys what is under it without moving at all -
+     * which is the difference between a ram and a press, and why a leaning tower falls over rather than
+     * standing on a flower.
+     */
+    public static double crushStrength(double resistance, double pressureScale) {
+        if (Double.isInfinite(resistance) || pressureScale <= 0.0) {
+            return Double.POSITIVE_INFINITY;
+        }
+        return Math.max(0.0, resistance) * pressureScale;
+    }
+
+    /**
+     * The share of the load still pressing on a block that many layers below the surface bearing it.
+     *
+     * <p>Weight does not stop at the block it is resting on, and it does not arrive at the one underneath
+     * undiminished either: each layer hands it to a wider patch of the one below. That is why a footing works,
+     * and it is the difference between a heavy thing sinking to a depth and a heavy thing sinking to bedrock.
+     */
+    public static double crushLoadAt(double pressure, int depth, double spread) {
+        if (depth <= 0 || spread <= 0.0) {
+            return pressure;
+        }
+        return pressure / (1.0 + depth * spread);
+    }
+
+    /** How far past its crush strength a block is loaded, which is how fast it accumulates damage. */
+    public static double crushOvershoot(double pressure, double strength) {
+        if (strength <= 0.0) {
+            return pressure > 0.0 ? Double.MAX_VALUE : 0.0;
+        }
+        return pressure / strength;
+    }
+
+    public static double massFactor(double contactPressure, double referencePressure, double sensitivity,
+                                    double minFactor, double maxFactor) {
+        if (contactPressure <= 0.0 || referencePressure <= 0.0 || sensitivity <= 0.0) {
+            return 1.0;
+        }
+        return Math.clamp(Math.pow(contactPressure / referencePressure, sensitivity), minFactor, maxFactor);
+    }
+
+    /** Mass eases the hardness a block owes to its material, but not the floor underneath it. */
+    public static double effectiveBreakSpeed(double breakSpeed, double massFactor, double floor) {
+        return effectiveBreakSpeed(breakSpeed, massFactor, floor, floor);
+    }
+
+    /**
+     * Weight buys two separate things, and without the second one it buys almost nothing. Compressing the
+     * vanilla hardness range leaves most blocks only a metre or two per second above the floor, so easing
+     * the material term alone moves a break speed by fractions however heavy the contraption is - which is
+     * what makes a mountain of a build feel no different from a raft.
+     *
+     * <p>So mass also presses the floor itself down, towards {@code crushFloor}: something heavy enough
+     * crushes what it settles onto rather than waiting to be thrown at it. Only downwards, though. The floor
+     * is what stops a contraption digging its own grave from the moment it is assembled, and a light,
+     * sprawling build has no business needing more speed than a dense one to break the same dirt.
+     */
+    public static double effectiveBreakSpeed(double breakSpeed, double massFactor, double floor, double crushFloor) {
+        if (massFactor <= 0.0) {
+            return breakSpeed;
+        }
+        final double easedFloor = Math.clamp(floor / massFactor, Math.min(crushFloor, floor), floor);
+        return easedFloor + Math.max(0.0, breakSpeed - floor) / massFactor;
+    }
+
+    /**
+     * How much of a block's life one qualifying impact takes. An impact only ever reaches this having already
+     * passed the break speed, so the softest hit that can happen at all is still worth a full share of the
+     * damage - {@code resilience} is exactly how many of those a block survives. Hitting it that many times
+     * harder finishes it in one, which is what keeps a real crash looking like a crash rather than a chore.
+     */
+    public static double crackDamage(double overshoot, double resilience) {
+        if (resilience <= 1.0) {
+            return 1.0;
+        }
+        return Math.max(overshoot, 1.0) / resilience;
+    }
+
+    public static boolean shouldBreak(double impactVelocity, double breakSpeed, boolean indestructible, boolean budgetExhausted) {
+        if (indestructible || budgetExhausted) {
+            return false;
+        }
+        return Math.abs(impactVelocity) >= breakSpeed;
+    }
+
+    /**
+     * Which side of a contact gives way. Named after Sable's own callback parameters: {@code HIT} is
+     * the block the callback sits on, {@code OTHER} is the block on the opposing body.
+     */
+    public enum Victim {
+        NONE,
+        HIT,
+        OTHER
+    }
+
+    /**
+     * Effective mass of a two-body impact. As the opposing mass grows without bound this tends to
+     * {@code mass}, so immovable terrain is just the limiting case of a contraption-on-contraption hit.
+     */
+    public static double reducedMass(double mass, double otherMass) {
+        if (mass <= 0.0) {
+            return 0.0;
+        }
+        if (otherMass <= 0.0 || Double.isInfinite(otherMass)) {
+            return mass;
+        }
+        return (mass * otherMass) / (mass + otherMass);
+    }
+
+    /**
+     * What winning an impact costs the winner, as a share of a full break.
+     *
+     * <p>Something gives way because it was the weaker of the two, not because the other one was unharmed,
+     * and a hull that reduces a wall to rubble and comes out without a scratch is the tell that only one side
+     * of the contact was ever being modelled. Priced by how close the contest was: a hull ramming something
+     * nearly as strong as itself pays nearly a block for every block it takes, and one ploughing soil pays
+     * almost nothing. Capped at a full break, so the loser can never cost the winner more than itself.
+     */
+    public static double wear(final Side winner, final Side loser) {
+        final double strength = winner.resistance();
+        if (strength <= 0.0 || Double.isInfinite(strength)) {
+            return strength <= 0.0 ? 1.0 : 0.0;
+        }
+        return Math.clamp(loser.resistance() / strength, 0.0, 1.0);
+    }
+
+    public record Side(double resistance, double breakSpeed, boolean indestructible) {
+
+        boolean yieldsTo(double impactVelocity) {
+            return shouldBreak(impactVelocity, this.breakSpeed, this.indestructible, false);
+        }
+    }
+
+    public static Victim victim(double impactVelocity, Side hit, Side other, boolean budgetExhausted) {
+        if (budgetExhausted) {
+            return Victim.NONE;
+        }
+
+        if (other == null) {
+            return hit.yieldsTo(impactVelocity) ? Victim.HIT : Victim.NONE;
+        }
+
+        // The softer material gives way. A tie on material is settled on what it takes to break each,
+        // which is where a build's toughness comes in - so ramming a wall of your own build material still
+        // digs instead of eating the contraption, and a build tuned to be flimsy loses to one anyway.
+        if (weaker(other, hit)) {
+            if (other.yieldsTo(impactVelocity)) {
+                return Victim.OTHER;
+            }
+            return hit.yieldsTo(impactVelocity) ? Victim.HIT : Victim.NONE;
+        }
+
+        if (hit.yieldsTo(impactVelocity)) {
+            return Victim.HIT;
+        }
+        return other.yieldsTo(impactVelocity) ? Victim.OTHER : Victim.NONE;
+    }
+
+    /**
+     * Whether a break also costs the contact. Dropping every contact the moment a block gives way means
+     * nothing ever slows a ram down and it sinks through terrain; keeping every one means it bounces off
+     * rubble it already destroyed. Only impacts well past the break speed are let through for free, so a
+     * ram digs while it is fast and comes to rest once the terrain has taken enough out of it.
+     */
+    public static boolean punchesThrough(double impactVelocity, double breakSpeed, double punchThroughRatio) {
+        if (punchThroughRatio <= 1.0) {
+            return true;
+        }
+        return Math.abs(impactVelocity) >= breakSpeed * punchThroughRatio;
+    }
+
+    /** How far behind a struck face {@link Backing} looks for something bearing the load. */
+    public static final int BACKING_REACH = 3;
+
+    /** What one block beside a struck face is worth against one block of depth behind it. */
+    private static final double BACKING_BESIDE = 0.25;
+
+    /**
+     * The share of its neighbours' support a block has, from nothing at all to fully buried.
+     *
+     * <p>Depth carries most of it because that is the direction the load actually travels. The lateral four
+     * are worth a quarter each so that one block in a wall does not read the same as one hung in the air -
+     * a wall is held together, it is just not held up.
+     */
+    public static double support(final int behind, final int beside) {
+        return Math.clamp((behind + beside * BACKING_BESIDE) / (BACKING_REACH + 1.0), 0.0, 1.0);
+    }
+
+    /**
+     * What that support is worth on the material, given how much of a block's strength is on loan from it.
+     *
+     * <p>Material alone says a pane of stone hung in the air is exactly as hard to get through as the face of
+     * a mountain, which is the reading that makes a wooden hull either bounce off a garden wall or eat a
+     * cliff - there is no setting of the material numbers that gets both right, because the difference
+     * between the two is not the material.
+     */
+    public static double backed(final double support, final double weight) {
+        final double share = Math.clamp(weight, 0.0, 1.0);
+        return 1.0 - share + share * Math.clamp(support, 0.0, 1.0);
+    }
+
+    private static boolean weaker(final Side side, final Side than) {
+        if (side.resistance() != than.resistance()) {
+            return side.resistance() < than.resistance();
+        }
+        return side.breakSpeed() < than.breakSpeed();
+    }
+
+    public static double scatterSpeed(double impactVelocity, double resistance, double scatterVelocityScale) {
+        double excess = Math.abs(impactVelocity) - resistance;
+        if (excess <= 0.0) {
+            return 0.0;
+        }
+        return Math.min(excess * scatterVelocityScale, 2.0);
+    }
+}
