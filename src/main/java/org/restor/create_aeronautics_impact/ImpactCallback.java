@@ -239,15 +239,23 @@ public final class ImpactCallback implements BlockSubLevelCollisionCallback {
         final boolean punchThrough = tuning.punchThrough()
                 && ImpactResolver.punchesThrough(impactVelocity, hit.breakSpeed(), tuning.punchThroughRatio());
 
+        // Below that speed the block breaks and the contact stays, and blocks are not removed until after
+        // the step - so the rest of the step is spent bouncing the build off a wall that will not exist by
+        // the time the bounce lands. That is the hop a stone hull makes settling onto ground it is already
+        // grinding through. What it was pushed back with is taken as drag instead: still slowed by what it
+        // destroyed, no longer thrown off it.
+        boolean softened = false;
+
         if (PendingBreaks.queue(level, hitBlockPos, hitState, worldImpact,
                 impactVelocity, hit.resistance(), overshoot(impactVelocity, hit), hitIsContraption,
                 bodyId, kinetic)) {
             this.destroyedThisTick++;
+            softened = tuning.softBreakContact();
             if (other != null) {
                 PendingBreaks.wear(level, otherHitBlockPos, otherState, worldImpact, impactVelocity,
                         other.resistance(), ImpactResolver.wear(other, hit) * wearShare, true);
             }
-            if (punchThrough) {
+            if (punchThrough || softened) {
                 final double momentum = ImpactResolver.breakDrag(
                         hit.resistance(), impactVelocity, tuning.breakDragMass());
                 PendingBreaks.drag(level, otherSubLevel, momentum);
@@ -255,7 +263,9 @@ public final class ImpactCallback implements BlockSubLevelCollisionCallback {
             }
         }
 
-        return punchThrough ? new CollisionResult(NO_TANGENT_MOTION, true) : CollisionResult.NONE;
+        return punchThrough || softened
+                ? new CollisionResult(NO_TANGENT_MOTION, true)
+                : CollisionResult.NONE;
     }
 
     /** How far past its break speed the block was hit, which is how fast it accumulates damage. */

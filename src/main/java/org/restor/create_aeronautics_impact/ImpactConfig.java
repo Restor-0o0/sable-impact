@@ -464,6 +464,12 @@ public final class ImpactConfig {
                     "wanted is a few pieces turning through the air over a heap that is mostly still there.")
             .defineInRange("contraptionScatterChance", 0.3, 0.0, 1.0);
 
+    public static final ModConfigSpec.BooleanValue SETTLE = BUILDER
+            .comment("Whether blocks that did not fly are put back down near where they broke instead of being",
+                    "deleted. Off is how this mod behaved before 1.3: a crash leaves a clean hole and nothing",
+                    "on the ground to show for it.")
+            .define("settle", true);
+
     public static final ModConfigSpec.DoubleValue SETTLE_SHARE = BUILDER
             .comment("Fraction of the blocks that did not fly which are put back down near where they broke",
                     "instead of vanishing. This is what decides whether a crash leaves wreckage or leaves a",
@@ -636,6 +642,24 @@ public final class ImpactConfig {
                     "Nothing is lost either way: what one contact does not take is left for the next.")
             .defineInRange("perContactShare", 0.2, 0.01, 1.0);
 
+    public static final ModConfigSpec.IntValue SHOCK_MAX_WAVES = BUILDER
+            .comment("How many waves one contraption may set going in one tick, however many contacts it",
+                    "reports. The contact side of a shock is priced per contact and is not drawn from the",
+                    "kinetic reservoir, so without this a hull landing flat buys a full wave for each of the",
+                    "several hundred contacts it reports, and what the player sees is the impact point eating",
+                    "outwards in rings for tick after tick until the whole build is gone. That is also what",
+                    "leaves nothing for the cracks to split, since a build already eaten cannot come apart.",
+                    "A handful is enough to cover the face that landed. Raise it for a crash that pulverises",
+                    "more of the build, lower it towards 1 for a single clean crater and the rest in pieces.",
+                    "Terrain is not capped: a hull ploughing a hillside is meant to plough it.")
+            .defineInRange("maxHullWaves", 4, 0, 4096);
+
+    public static final ModConfigSpec.BooleanValue FRACTURE = BUILDER
+            .comment("Whether a crash also splits a build along cracks, rather than only eating it outwards from",
+                    "the impact. Off is the pre-1.4 behaviour, waves only, and the energy cracking would have",
+                    "taken goes back to them.")
+            .define("fracture", true);
+
     public static final ModConfigSpec.DoubleValue FRACTURE_SHARE = BUILDER
             .comment("The share of a crash's energy that goes into splitting a build rather than pulverising it.",
                     "A shock spent on its own spreads out of the impact in every direction, so what it leaves",
@@ -673,6 +697,28 @@ public final class ImpactConfig {
                     "step the crack may wander a block along its own normal, up to this, so what it leaves is a",
                     "ragged seam. Costs nothing: it is the same one block per column either way.")
             .defineInRange("fractureWander", 2, 0, 16);
+
+    public static final ModConfigSpec.IntValue FRACTURE_GAP = BUILDER
+            .comment("How many blocks of nothing a crack may cross before it gives up, in blocks.",
+                    "This is the setting that decides whether cracks work at all on a real build. A wave is",
+                    "carried by what is solid and has no business crossing a room; a crack is a surface, and",
+                    "a ship is a shell around air. At 0 a crack stops at the first cavity, which means it cuts",
+                    "solid plates in two and does nothing whatever to a hull - it dies an inch inside the skin",
+                    "it entered through. Bridging lets the same seam come out of the deck, cross the hold and",
+                    "carry on through the floor, which is the cut that actually separates anything.",
+                    "It is bounded so a crack cannot wander off into open plotgrid forever, and crossing a gap",
+                    "is free: nothing is broken there because there was nothing there.")
+            .defineInRange("fractureGap", 6, 0, 64);
+
+    public static final ModConfigSpec.DoubleValue FRACTURE_COST = BUILDER
+            .comment("What a crack pays for a block, as a fraction of what a wave pays for the same block.",
+                    "Cheap on purpose, and this is the other half of making cracks work. A wave is a volume",
+                    "and a crack is a surface: the wave's price buys a sphere, and at that price the same",
+                    "energy buys a disc a few blocks across, which is a scratch rather than a cut. A crack",
+                    "that stops halfway is worth nothing at all - it has to reach the far side of the build",
+                    "or it has not split anything - so it is priced to cross what it starts on.",
+                    "1.0 makes cracking cost exactly what pulverising does, which in practice turns it off.")
+            .defineInRange("fractureCost", 0.05, 0.001, 1.0);
 
     public static final ModConfigSpec.DoubleValue SHOCK_COST = BUILDER
             .comment("What one block's resistance costs the wave passing through it. Higher makes material",
@@ -733,6 +779,19 @@ public final class ImpactConfig {
                     "contact is dropped as well as the block. Below this the block still shatters but the hull is",
                     "still pushed back by it, so a ram bleeds speed as it digs.")
             .defineInRange("punchThroughRatio", 2.5, 1.0, 100.0);
+
+    public static final ModConfigSpec.BooleanValue SOFT_BREAK_CONTACT = BUILDER
+            .comment("Whether a block that is breaking anyway stops pushing back on what broke it.",
+                    "Blocks are removed after the physics step, so below punchThroughRatio the solver spends",
+                    "the rest of the step resolving a contact against a wall that is already gone - the build",
+                    "is bounced off something that will not exist by the time the bounce is over. That is the",
+                    "hop a stone hull makes when it settles onto ground it is grinding through, and no amount",
+                    "of tuning the break itself can remove it, because the break is not what pushed.",
+                    "On, a break drops its contact whatever the speed, and the momentum the block would have",
+                    "returned as a bounce is taken away as drag instead (see breakDragMass): the hull is still",
+                    "slowed by what it destroyed, it is just not thrown back up by it.",
+                    "Off restores the old behaviour, where only impacts past punchThroughRatio drop a contact.")
+            .define("softBreakContact", true);
 
     public static final ModConfigSpec.DoubleValue BREAK_DRAG_MASS = BUILDER
             .comment("Mass (kg) a contraption has to drag up to its own speed for every point of resistance of",
@@ -1058,6 +1117,7 @@ public final class ImpactConfig {
                          boolean dropItems,
                          boolean punchThrough,
                          double punchThroughRatio,
+                         boolean softBreakContact,
                          double breakDragMass,
                          double breakDragMax,
                          double fragileTrigger,
@@ -1078,6 +1138,7 @@ public final class ImpactConfig {
                          double hullBackingWeight,
                          int hullBackingReach,
                          double contraptionScatterChance,
+                         boolean settle,
                          double settleShare,
                          int settleDrop,
                          int settleSpread,
@@ -1095,10 +1156,14 @@ public final class ImpactConfig {
                          double shockKineticScale,
                          double shockMinSpeed,
                          double shockContactShare,
+                         int shockMaxWaves,
+                         boolean fracture,
                          double fractureShare,
                          int fractureCount,
                          double fractureFalloff,
                          int fractureWander,
+                         int fractureGap,
+                         double fractureCost,
                          double shockCost,
                          double shockFalloff,
                          int shockMaxPerImpact,
@@ -1157,6 +1222,7 @@ public final class ImpactConfig {
                     DROP_ITEMS.get(),
                     PUNCH_THROUGH.get(),
                     PUNCH_THROUGH_RATIO.get(),
+                    SOFT_BREAK_CONTACT.get(),
                     BREAK_DRAG_MASS.get(),
                     BREAK_DRAG_MAX.get(),
                     FRAGILE_TRIGGER.get(),
@@ -1177,6 +1243,7 @@ public final class ImpactConfig {
                     HULL_BACKING_WEIGHT.get(),
                     HULL_BACKING_REACH.get(),
                     CONTRAPTION_SCATTER_CHANCE.get(),
+                    SETTLE.get(),
                     SETTLE_SHARE.get(),
                     SETTLE_DROP.get(),
                     SETTLE_SPREAD.get(),
@@ -1194,10 +1261,14 @@ public final class ImpactConfig {
                     SHOCK_KINETIC_SCALE.get() * Math.max(1.0, strength),
                     SHOCK_MIN_SPEED.get(),
                     SHOCK_CONTACT_SHARE.get(),
+                    SHOCK_MAX_WAVES.get(),
+                    FRACTURE.get(),
                     FRACTURE_SHARE.get(),
                     FRACTURE_COUNT.get(),
                     FRACTURE_FALLOFF.get(),
                     FRACTURE_WANDER.get(),
+                    FRACTURE_GAP.get(),
+                    FRACTURE_COST.get(),
                     SHOCK_COST.get(),
                     SHOCK_FALLOFF.get(),
                     SHOCK_MAX_PER_IMPACT.get(),

@@ -197,10 +197,14 @@ Every setting named here lives in the `[shock]` section of the config file.
 	kineticScale = 1.0
 	minSpeed = 8.0
 	perContactShare = 0.2
+	maxHullWaves = 4
+	fracture = true
 	fractureShare = 0.6
 	fractureCount = 2
 	fractureFalloff = 0.995
 	fractureWander = 2
+	fractureGap = 6
+	fractureCost = 0.05
 	cost = 1.0
 	falloff = 0.98
 	maxBlocksPerImpact = 8192
@@ -265,6 +269,15 @@ following second. At the default `0.2` the same total arrives as several smaller
 that hit, each finishing about when it started. Nothing is lost either way - what one contact leaves is
 there for the next.
 
+`maxHullWaves` caps how many waves one contraption may open in a tick regardless, and it is the setting to
+reach for if a crash reads as the build being eaten rather than broken. The contact side of a shock is priced
+per contact and is *not* drawn from the reservoir, so a hull landing flat gets a full wave for every one of
+its several hundred contacts; what that looks like is the impact point spreading outwards in rings, tick
+after tick, until there is no build left. Capping it also leaves something for the cracks to work on - a
+build already eaten cannot come apart into anything.
+
+Terrain is not capped. A hull ploughing a hillside is meant to plough it.
+
 ### Waves and cracks
 
 A wave spends its energy in every direction at once, so what it leaves is a bite taken out of the build. That
@@ -272,16 +285,34 @@ is the right picture for the part that actually hit, and it is nothing like what
 Things this size do not dissolve - they come apart along a line. The back half of the ship separates and goes
 its own way, still a ship.
 
-So the crash is divided between two things. `fractureShare` is how much of it goes into **cracks** instead of
-into the wave: seams one block wide that run clean through the build from the impact, cutting it into pieces
-rather than eating it. The rest still goes to the ordinary wave. Together they are the crash - a wrecked,
-cratered end where it came down, and the rest of the hull in a couple of large pieces.
+So the crash is divided between two things. `fracture` turns cracks on, and `fractureShare` is how much of
+the crash goes into them instead of into the wave: seams one block wide that run clean through the build from
+the impact, cutting it into pieces rather than eating it. The rest still goes to the ordinary wave. Together
+they are the crash - a wrecked, cratered end where it came down, and the rest of the hull in a couple of
+large pieces.
 
-`fractureCount` is how many cracks one crash may open, and they are opened **once per build per tick**, by
-the first contact hard enough to earn them. Not once per contact: a landing reports contacts in the hundreds
-and they are all the same crash, and a hull cut in three hundred places is not in pieces, it is gravel. Two
-cuts is a build in three parts. Each crack takes a different axis, so two cuts really are two pieces rather
-than the same cut made twice.
+`fractureCount` is how many cracks one crash may open, and they are opened **once per contact, up to that
+many per build per tick**. Not once per contact without limit: a landing reports contacts in the hundreds and
+they are all the same crash, and a hull cut in three hundred places is not in pieces, it is gravel. Two cuts
+is a build in three parts. Spreading them over separate contacts is what makes them look like breaks rather
+than a diagram: each cut starts where the build was actually touched, so two cuts are two seams from two
+corners of the face that landed rather than two planes crossing at whichever contact was reported first. Each
+takes a different axis as well, so two cuts really are two pieces rather than the same cut made twice.
+
+`fractureGap` is how many blocks of nothing a crack may cross before it gives up, and on a real build it is
+the setting that decides whether cracks work at all. A wave is carried by what is solid and has no business
+crossing a room. A crack is a surface, and a ship is a shell around air: at `0` a seam entering the hull dies
+an inch inside the skin it came through, which cuts solid plates in two very convincingly and does nothing
+whatever to anything with a room in it. Bridging lets the same seam come out of the deck, cross the hold and
+carry on through the floor, which is the cut that actually separates something. Crossing is free - there was
+nothing there to break - and bounded, so a crack cannot wander off into open plotgrid forever.
+
+`fractureCost` is what a crack pays for a block, as a fraction of what a wave pays for the same one, and it
+is the other half of making cracks work. The two are buying different shapes. A wave's price buys a sphere;
+at that same price a crack buys a disc a few blocks across, which is a scratch. And a cut that stops halfway
+has split nothing at all - it is only a cut if it reaches the far side - so it is priced cheap enough to
+cross what it started on. Lower it to have cracks reach further; `1.0` makes cracking cost exactly what
+pulverising does, which in practice turns it off.
 
 `fractureWander` is how far a crack may drift off the flat plane it started on. At `0` a build is cut as
 though by a saw, which is legible and looks like nothing that has ever broken; at the default the seam
@@ -298,8 +329,8 @@ Cracks are for contraptions only. A crack through terrain is a canyon.
 One thing this cannot do on its own: whether a piece that has been cut free then *flies off* as a body of its
 own is Sable's decision, not this mod's. All a crack does is make sure nothing is still holding the piece on.
 
-Set `fractureShare` or `fractureCount` to `0` for the old behaviour - waves only, and the energy that would
-have gone into cracks handed back to them.
+Set `fracture = false` for the old behaviour - waves only, and the energy that would have gone into cracks
+handed back to them.
 
 ### How far it travels
 
@@ -338,6 +369,14 @@ behaviour, a wave cut short by either ceiling is *not* thrown away: it is kept a
 sixty-four waves per level at a time. That is what lets a large crash spend its whole budget without spending
 it all in one frame.
 
+### If a crash eats the build instead of splitting it
+
+This is the shape of the damage rather than the amount of it, and three settings decide it. Lower
+`maxHullWaves` towards `1`, so the crash is one crater instead of one per contact. Lower `fractureCost`, so
+a crack reaches the far side of the build instead of stopping inside it. Raise `fractureGap` if the build is
+mostly rooms, so a seam can cross them. Only then raise `fractureShare`, which just moves energy between two
+things that are both already working.
+
 ### If structures are still too solid
 
 In order: raise `kineticScale`, raise `falloff` towards `0.99`, lower `cost`, then lower `minOvershoot`. If
@@ -360,6 +399,7 @@ Every setting named here lives in the `[debris]` section of the config file.
 [debris]
 	scatterChance = 0.25
 	contraptionScatterChance = 0.3
+	settle = true
 	settleShare = 0.85
 	settleDrop = 6
 	settleSpread = 4
@@ -391,6 +431,9 @@ an enormous amount of it; a ship shedding its hull is the thing the player is ac
 kept well under `1` all the same: every block that flies is a block leaving the wreck, and a wreck that
 throws all of itself is a fountain rather than a crash. What is wanted is a few pieces turning through the
 air over a heap that is mostly still there.
+
+**`settle`** — the switch over the whole of it. Off, a broken block that did not fly is simply gone, which
+is how this mod behaved before 1.3.
 
 **`settleShare`** — the fraction of everything that did *not* fly which is put back down instead of vanishing,
 and the setting that decides whether a crash leaves wreckage or leaves a hole. A settling block is pushed
@@ -539,10 +582,14 @@ Section `[shock]`. See [Shock](#shock-when-an-impact-is-felt-past-the-block-it-b
 | `kineticScale` | `1.0` | Energy per kilojoule the striking body is carrying. The main dial for how thoroughly a build comes apart. |
 | `minSpeed` | `8.0` | The speed (m/s) below which nothing is a crash and no shock is sent, whatever was hit. The guard that lets a build be landed and moved. Not touched by `impactStrength`. |
 | `perContactShare` | `0.2` | The largest share of a crash's remaining energy one contact may spend. Low spreads the damage along the face that hit; `1.0` gives it all to one point. |
-| `fractureShare` | `0.6` | The share of a crash spent cutting the build into pieces rather than eating a hole in it. `0` is waves only. |
-| `fractureCount` | `2` | How many cracks one crash may open, once per build per tick rather than once per contact. |
+| `maxHullWaves` | `4` | How many waves one contraption may open in a tick, however many contacts it reports. What stops a crash from eating the build outwards in rings. Terrain is not capped. |
+| `fracture` | `true` | Whether a crash also splits a build along cracks. `false` is waves only. |
+| `fractureShare` | `0.6` | The share of a crash spent cutting the build into pieces rather than eating a hole in it. |
+| `fractureCount` | `2` | How many cracks one crash may open, one per contact, up to this many per build per tick. |
 | `fractureFalloff` | `0.995` | What a crack keeps of its purchasing power per block travelled. Near `1`: a crack is no use unless it crosses the build. |
 | `fractureWander` | `2` | How far a crack may drift off its plane, in blocks. `0` cuts like a saw. |
+| `fractureGap` | `6` | How many blocks of nothing a crack may cross. `0` stops it at the first cavity, which on a hull means it stops immediately. |
+| `fractureCost` | `0.05` | What a crack pays for a block, against what a wave pays for the same one. Lower reaches further; `1.0` turns cracking off in practice. |
 | `cost` | `1.0` | What one block's resistance costs the budget. Higher makes material matter more. |
 | `falloff` | `0.98` | The share of its purchasing power a wave keeps per block travelled. What bounds its reach. |
 | `maxBlocksPerImpact` | `8192` | Ceiling on blocks one shock may break. |
@@ -589,6 +636,7 @@ Section `[shock]`. See [Shock](#shock-when-an-impact-is-felt-past-the-block-it-b
 | `boreShare` | `0.5` | How much of the impact a block beside the hull's path feels, against one in it. `0` turns shearing off. |
 | `punchThrough` | `true` | Whether a block that breaks gets out of the hull's way instead of stopping it. Off, the whole build is stopped dead by the first block it breaks. |
 | `punchThroughRatio` | `2.5` | With `punchThrough` on, how far an impact must overshoot before the contact is dropped too. |
+| `softBreakContact` | `true` | Whether a block that is breaking anyway stops pushing back. Blocks are removed after the physics step, so without this the rest of the step is spent bouncing the build off a wall that is already gone — the hop a hull makes settling onto ground it is grinding through. What it would have been pushed back with is taken as drag instead. |
 | `breakDragMass` | `2.0` | Mass (kg) a contraption must drag up to its own speed per point of resistance of every block punched clean through. `0` is free digging. |
 | `breakDragMax` | `0.25` | The largest share of its speed a contraption may lose to breaking blocks in one tick. `1` restores dead stops. |
 
@@ -608,6 +656,7 @@ Everything under `[debris]`. The chapter on it is [above](#debris-what-flies-and
 |---|---|---|
 | `scatterChance` | `0.25` | Fraction of broken **terrain** blocks that fly off as debris rather than simply vanishing. |
 | `contraptionScatterChance` | `0.3` | The same for a **contraption's own** blocks. |
+| `settle` | `true` | Whether blocks that did not fly are put back down near where they broke instead of deleted. `false` is the pre-1.3 behaviour. |
 | `settleShare` | `0.85` | Fraction of the blocks that did *not* fly which are put back down nearby instead of vanishing. The difference between wreckage and a hole. |
 | `settleDrop` | `6` | How far a settling block may fall looking for something to rest on. |
 | `settleSpread` | `4` | How wide the heap of a contraption's settled blocks is. Its blocks live in the plotgrid, so only the crash has a place in the world. |
@@ -685,7 +734,7 @@ without opening it:
 ./gradlew build -Pbuild_variant=fast
 ```
 
-→ `create_aeronautics_impact-1.3.0-fast.jar`, listed as *Create Aeronautics Impact (Fast)*. Same mod id and
+→ `create_aeronautics_impact-1.4.0-fast.jar`, listed as *Create Aeronautics Impact (Fast)*. Same mod id and
 same version, so only one variant can be installed at a time.
 
 For a release, build every variant in one run:

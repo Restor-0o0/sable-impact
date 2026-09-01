@@ -134,7 +134,8 @@ public final class BlockScatter {
                                                final Vec3 away,
                                                final BlockState state,
                                                final ImpactConfig.Tuning tuning) {
-        if (tuning.settleShare() <= 0.0 || level.random.nextDouble() >= tuning.settleShare()) {
+        if (!tuning.settle() || tuning.settleShare() <= 0.0
+                || level.random.nextDouble() >= tuning.settleShare()) {
             return null;
         }
         final BlockPos pushed = pos.offset(
@@ -153,7 +154,8 @@ public final class BlockScatter {
                                               final Vector3d worldImpact,
                                               final BlockState state,
                                               final ImpactConfig.Tuning tuning) {
-        if (tuning.settleShare() <= 0.0 || level.random.nextDouble() >= tuning.settleShare()) {
+        if (!tuning.settle() || tuning.settleShare() <= 0.0
+                || level.random.nextDouble() >= tuning.settleShare()) {
             return null;
         }
         final double spread = tuning.settleSpread();
