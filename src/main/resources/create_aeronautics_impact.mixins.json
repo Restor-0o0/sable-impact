@@ -7,6 +7,8 @@
     "BlockMixin",
     "BlockStateProfileMixin",
     "FallingBlockEntityMixin",
+    "PlotChunkHolderMixin",
+    "SableCommonEventsMixin",
     "VoxelNeighborhoodStateMixin"
   ],
   "injectors": {

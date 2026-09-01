@@ -2,17 +2,19 @@ package org.restor.create_aeronautics_impact;
 
 import it.unimi.dsi.fastutil.doubles.DoubleArrayFIFOQueue;
 import it.unimi.dsi.fastutil.ints.Int2DoubleMap;
+import it.unimi.dsi.fastutil.ints.Int2LongMap;
+import it.unimi.dsi.fastutil.ints.Int2LongOpenHashMap;
 import it.unimi.dsi.fastutil.ints.Int2DoubleOpenHashMap;
 import it.unimi.dsi.fastutil.ints.Int2IntMap;
 import it.unimi.dsi.fastutil.ints.Int2IntOpenHashMap;
 import it.unimi.dsi.fastutil.ints.IntArrayFIFOQueue;
 import it.unimi.dsi.fastutil.longs.LongArrayFIFOQueue;
 import it.unimi.dsi.fastutil.longs.LongOpenHashSet;
+import it.unimi.dsi.fastutil.objects.ObjectIterator;
 import net.minecraft.core.BlockPos;
 import net.minecraft.core.Direction;
 import net.minecraft.server.level.ServerLevel;
 import net.minecraft.world.level.block.state.BlockState;
-import net.minecraft.world.level.chunk.LevelChunk;
 import org.jetbrains.annotations.Nullable;
 import org.joml.Vector3d;
 
@@ -70,10 +72,24 @@ public final class ShockWave {
     /** How many waves each hull has set going this tick, which is what keeps a landing from being all wave. */
     private static final Int2IntMap WAVES = new Int2IntOpenHashMap();
 
+    /** When each body's reservoir was last drawn from, so a crash can be one crash across several ticks. */
+    private static final Int2LongMap TOUCHED = new Int2LongOpenHashMap();
+
     /** What {@link #strike} found: something it destroyed, nothing at all, or something it could not pass. */
     private static final int BLOCKED = -1;
     private static final int EMPTY = 0;
     private static final int BROKEN = 1;
+
+    /**
+     * Something the shock was not strong enough to break, and went through instead.
+     *
+     * <p>The whole of stress mode is in the existence of this fourth answer. A budgeted wave has only three:
+     * it can afford a block, or the block is nothing, or the branch ends - and "I cannot afford this" and
+     * "this is the edge of the world" are the same outcome to it, which is why a wave used to stop dead at
+     * the first bulkhead it could not pay for. A shock that is measured rather than spent has somewhere else
+     * to be. It goes through, weaker, and finds the windows on the far side.
+     */
+    private static final int SURVIVED = 2;
 
     private final ServerLevel level;
     private final Vector3d worldImpact;
@@ -87,8 +103,19 @@ public final class ShockWave {
     /** Where on that axis the cut started, which is what {@code fractureWander} is measured against. */
     private final int plane;
 
+    /** Whether this wave is measured against what it meets rather than paid out of a purse. Cracks never
+        are: a seam is a designed cut through a build and its length is meant to be bought, not survived. */
+    private final boolean stress;
+
+    private final ChunkCache chunks = new ChunkCache();
+
     private final LongOpenHashSet seen = new LongOpenHashSet();
     private final LongArrayFIFOQueue frontier = new LongArrayFIFOQueue();
+
+    // What is still arriving at each entry of the frontier. Under stress this is the wave: it is not a
+    // total to be divided among the blocks ahead but a strength each of them is measured against on its
+    // own, so two branches out of one block both leave carrying all of it.
+    private final DoubleArrayFIFOQueue intensities = new DoubleArrayFIFOQueue();
 
     // What a block reached through this one costs, over and above its material. Carried per entry rather
     // than derived from a depth, because breadth-first order makes it a multiply per block either way.
@@ -101,6 +128,12 @@ public final class ShockWave {
 
     private double budget;
     private int broken;
+
+    /** How much of the shock left the last block {@link #strike} looked at, whether or not it broke it. */
+    private double passed;
+
+    /** Blocks looked at rather than broken, which under stress is the only thing bounding the walk. */
+    private int scanned;
 
     /** The tick a parked wave is given up on, so a wreck stops shedding blocks once it has stopped moving. */
     private long expires;
@@ -119,6 +152,7 @@ public final class ShockWave {
         this.toughness = contraption ? tuning.contraptionBlockToughness() : 1.0;
         this.crack = crack;
         this.plane = crack == null ? 0 : origin.get(crack);
+        this.stress = crack == null && tuning.stress();
     }
 
     /**
@@ -144,7 +178,7 @@ public final class ShockWave {
         if (!tuning.shockBlocks()) {
             return 0;
         }
-        rollTick(level.getGameTime());
+        rollTick(level.getGameTime(), tuning);
 
         // Two gates, and they answer different questions. The overshoot asks whether the hit was hard for
         // what it hit - a battleship resting its weight on a wall is carrying just as much energy as one
@@ -161,6 +195,11 @@ public final class ShockWave {
         int broken = cleave(level, origin, worldImpact, impactVelocity,
                 contraption, bodyId, kinetic, tuning, deadline);
 
+        // Before the wave cap below, and drawing nothing. The fragile pass is not a share of the crash, it
+        // is a consequence of it, and a build whose waves are all spent still loses its windows.
+        broken += GlassRun.spread(level, origin, worldImpact, impactVelocity,
+                contraption, bodyId, tuning, deadline);
+
         // Asked before the energy is drawn, so what a refused contact would have spent stays in the
         // reservoir for the cracks. A hull landing flat reports contacts in the hundreds and the contact
         // side of a shock is priced per contact rather than out of the reservoir, so without a cap on how
@@ -173,14 +212,22 @@ public final class ShockWave {
         }
 
         final double scale = contraption ? tuning.hullShockScale() : tuning.terrainShockScale();
-        final double energy = Math.max(
-                ImpactResolver.shockEnergy(overshoot, tuning.shockMinOvershoot(), scale),
-                draw(bodyId, contraption, kinetic, tuning.shockContactShare()));
+        final double contact = ImpactResolver.shockEnergy(overshoot, tuning.shockMinOvershoot(), scale);
+        final double energy = Math.max(contact, draw(bodyId, contraption, kinetic,
+                tuning.shockContactShare()));
         if (energy <= 0.0) {
             return broken;
         }
+
+        // Priced off the whole crash rather than off this contact's share of it, and deliberately so. The
+        // share exists to keep one contact from buying one enormous sphere, which is a statement about how
+        // much work may be done. An intensity is not work: every contact of the same landing is the same
+        // crash arriving, and dividing its strength by how many faces happened to touch would make a hull
+        // that lands flat softer than one that lands on a corner.
+        final double intensity = Math.max(contact, kinetic) * tuning.intensityScale();
+
         return broken + start(level, origin, worldImpact, impactVelocity,
-                contraption, null, energy, tuning, deadline);
+                contraption, null, energy, intensity, tuning, deadline);
     }
 
     /**
@@ -225,7 +272,7 @@ public final class ShockWave {
 
         final Direction.Axis[] axes = Direction.Axis.values();
         return start(level, origin, worldImpact, impactVelocity, true,
-                axes[Math.floorMod(bodyId + already, axes.length)], total, tuning, deadline);
+                axes[Math.floorMod(bodyId + already, axes.length)], total, 0.0, tuning, deadline);
     }
 
     /** Sets one walk going from the block that broke, and parks it if it cannot finish inside the tick. */
@@ -236,6 +283,7 @@ public final class ShockWave {
                              final boolean contraption,
                              final @Nullable Direction.Axis crack,
                              final double energy,
+                             final double intensity,
                              final ImpactConfig.Tuning tuning,
                              final long deadline) {
         if (energy <= 0.0 || brokenThisTick >= tuning.shockMaxPerTick()) {
@@ -247,6 +295,7 @@ public final class ShockWave {
         wave.seen.add(wave.key(origin));
         wave.frontier.enqueue(origin.asLong());
         wave.distances.enqueue(1.0);
+        wave.intensities.enqueue(intensity);
         wave.gaps.enqueue(0);
         return wave.run(tuning, deadline) ? wave.broken : park(level, wave, tuning);
     }
@@ -264,7 +313,7 @@ public final class ShockWave {
         if (running == null || running.isEmpty()) {
             return 0;
         }
-        rollTick(level.getGameTime());
+        rollTick(level.getGameTime(), tuning);
 
         int broken = 0;
         final Iterator<ShockWave> waves = running.iterator();
@@ -311,6 +360,7 @@ public final class ShockWave {
         final double left = RESERVOIR.getOrDefault(key, kinetic);
         final double taken = left * Math.clamp(share, 0.0, 1.0);
         RESERVOIR.put(key, left - taken);
+        TOUCHED.put(key, tick);
         return taken;
     }
 
@@ -355,9 +405,15 @@ public final class ShockWave {
                 this.crack == null ? tuning.shockFalloff() : tuning.fractureFalloff(), 0.1, 1.0);
         final int wander = this.crack == null ? 0 : tuning.fractureWander();
         final int maxGap = this.crack == null ? 0 : tuning.fractureGap();
+        final double floor = tuning.stressFloor();
 
         while (!this.frontier.isEmpty()) {
-            if (this.broken >= perImpact || this.budget <= 0.0) {
+            // Under stress nothing is bought, so an exhausted purse is not what ends the walk - the
+            // intensity floor and the scan ceiling are, and a wave that is still strong is still going.
+            if (this.broken >= perImpact || (!this.stress && this.budget <= 0.0)) {
+                return true;
+            }
+            if (this.stress && this.scanned >= tuning.stressMaxScan()) {
                 return true;
             }
             if (brokenThisTick >= tuning.shockMaxPerTick() || System.nanoTime() > deadline) {
@@ -366,6 +422,7 @@ public final class ShockWave {
 
             final long from = this.frontier.dequeueLong();
             final double distance = this.distances.dequeueDouble();
+            final double arriving = this.intensities.dequeueDouble();
             final int gap = this.gaps.dequeueInt();
             final double further = distance / falloff;
 
@@ -382,8 +439,20 @@ public final class ShockWave {
                     continue;
                 }
 
-                final int met = strike(this.cursor, distance, tuning);
+                this.scanned++;
+                final int met = strike(this.cursor, distance, arriving, tuning);
                 if (met == BLOCKED) {
+                    continue;
+                }
+                if (met == SURVIVED) {
+                    // The one branch that costs a block and breaks nothing, and the reason the mode reads
+                    // as a shock rather than as an appetite: the deck holds, and the crash is now behind it.
+                    if (this.passed > floor) {
+                        this.frontier.enqueue(this.cursor.asLong());
+                        this.distances.enqueue(further);
+                        this.intensities.enqueue(this.passed);
+                        this.gaps.enqueue(0);
+                    }
                     continue;
                 }
                 if (met == EMPTY) {
@@ -395,16 +464,20 @@ public final class ShockWave {
                     }
                     this.frontier.enqueue(this.cursor.asLong());
                     this.distances.enqueue(distance);
+                    this.intensities.enqueue(arriving);
                     this.gaps.enqueue(gap + 1);
                     continue;
                 }
                 this.broken++;
                 brokenThisTick++;
-                this.frontier.enqueue(this.cursor.asLong());
-                this.distances.enqueue(further);
-                this.gaps.enqueue(0);
+                if (!this.stress || this.passed > floor) {
+                    this.frontier.enqueue(this.cursor.asLong());
+                    this.distances.enqueue(further);
+                    this.intensities.enqueue(this.stress ? this.passed : arriving);
+                    this.gaps.enqueue(0);
+                }
 
-                if (this.broken >= perImpact || this.budget <= 0.0) {
+                if (this.broken >= perImpact || (!this.stress && this.budget <= 0.0)) {
                     return true;
                 }
                 if (brokenThisTick >= tuning.shockMaxPerTick()) {
@@ -468,7 +541,8 @@ public final class ShockWave {
      *
      * @return {@link #BROKEN}, {@link #EMPTY} or {@link #BLOCKED}.
      */
-    private int strike(final BlockPos pos, final double distance, final ImpactConfig.Tuning tuning) {
+    private int strike(final BlockPos pos, final double distance, final double intensity,
+                       final ImpactConfig.Tuning tuning) {
         final BlockState state = stateIfLoaded(pos);
         if (state == null) {
             return BLOCKED;
@@ -482,7 +556,11 @@ public final class ShockWave {
             return BLOCKED;
         }
         if (profile.passable()) {
+            this.passed = intensity;
             return EMPTY;
+        }
+        if (this.stress) {
+            return measure(pos, state, profile, intensity, tuning);
         }
 
         final double price = ImpactResolver.shockCost(
@@ -510,21 +588,112 @@ public final class ShockWave {
     }
 
     /**
+     * The same block, weighed instead of bought.
+     *
+     * <p>What arrives is compared against what the block can take, and one of two things happens - neither
+     * of which ends the walk. If the block fails, the shock loses that block's strength and carries the
+     * excess on. If it holds, the shock loses nothing at all and carries a fraction of itself through,
+     * decided by what the block is made of rather than by how far it has come.
+     *
+     * <p>That second case is worth being clear about, because it is the whole difference. A budgeted wave
+     * that cannot afford a bulkhead has spent nothing on it and still stops, which is not a shock hitting a
+     * strong wall - it is a shock hitting the end of a price list. Here the wall is a wall: the crash runs
+     * along it, through it, and out the other side into whatever was cheaper to break.
+     */
+    private int measure(final BlockPos pos, final BlockState state, final BlockProfile profile,
+                        final double intensity, final ImpactConfig.Tuning tuning) {
+        final Failure failure = profile.failure();
+        final double threshold = ImpactResolver.stressThreshold(
+                profile.resistance() * this.toughness,
+                tuning.threshold(failure),
+                backing(pos, tuning));
+
+        if (intensity <= threshold) {
+            this.passed = ImpactResolver.stressPassed(intensity, threshold, false,
+                    tuning.transmit(failure), tuning.stressPassOn());
+            return SURVIVED;
+        }
+
+        final BlockPos broken = pos.immutable();
+        if (this.contraption) {
+            if (!BlockScatter.shatterContraptionBlock(this.level, broken, state, this.worldImpact,
+                    this.impactVelocity, profile.resistance())) {
+                // The build has spent its allowance. The shock is not over, it simply may not spend itself
+                // here, so it is stopped rather than let through onto blocks it is not allowed to touch.
+                this.passed = 0.0;
+                return BLOCKED;
+            }
+        } else {
+            BlockScatter.shatter(this.level, broken, state, this.worldImpact,
+                    this.impactVelocity, profile.resistance());
+        }
+        this.passed = ImpactResolver.stressPassed(intensity, threshold, true,
+                tuning.transmit(failure), tuning.stressPassOn());
+        return BROKEN;
+    }
+
+    /** How much of its strength the block has where it stands, counting what holds it. Six reads, skipped
+        entirely when the weight is zero - the answer is 1 either way. */
+    private double backing(final BlockPos pos, final ImpactConfig.Tuning tuning) {
+        final double weight = tuning.stressBacking();
+        if (weight <= 0.0) {
+            return 1.0;
+        }
+        int solid = 0;
+        final BlockPos.MutableBlockPos beside = new BlockPos.MutableBlockPos();
+        for (final Direction direction : Direction.values()) {
+            beside.set(pos.getX(), pos.getY(), pos.getZ());
+            beside.move(direction);
+            final BlockState state = stateIfLoaded(beside);
+            if (state != null && !state.isAir()) {
+                solid++;
+            }
+        }
+        return ImpactResolver.stressBacking(solid, weight);
+    }
+
+    /**
      * A wave spreads through a build that may be at the edge of what is loaded, and asking the level for a
      * block outside that would load the chunk from inside the break pass. A miss stays a miss.
      */
     private @Nullable BlockState stateIfLoaded(final BlockPos pos) {
-        final LevelChunk chunk = this.level.getChunkSource().getChunkNow(pos.getX() >> 4, pos.getZ() >> 4);
-        return chunk == null ? null : chunk.getBlockState(pos);
+        return this.chunks.stateIfLoaded(this.level, pos);
     }
 
-    private static void rollTick(final long now) {
-        if (now != tick) {
-            tick = now;
-            brokenThisTick = 0;
+    /**
+     * Rolls the per-tick counters, and decides whether a crash is one tick long or one crash long.
+     *
+     * <p>Clearing the reservoir every tick was the quiet half of "the wreck keeps detonating after it has
+     * landed". A hull that hits the ground at speed is still moving on the next tick and the one after, and
+     * every one of those ticks it is a heavy fast body touching the ground - so every one of them refilled
+     * the reservoir and bought a fresh set of waves out of energy the build had already spent. Under
+     * {@code oneCrash} the build's own reservoir is filled once and drawn down until the build has been
+     * quiet for as long as its damage budget needs, which makes both of them agree on what one crash is.
+     *
+     * <p>Terrain is still refilled per tick, on purpose. A hull ploughing a hillside is meant to keep
+     * ploughing it for as long as it is moving, and the ground has no build to protect.
+     */
+    private static void rollTick(final long now, final ImpactConfig.Tuning tuning) {
+        if (now == tick) {
+            return;
+        }
+        tick = now;
+        brokenThisTick = 0;
+        FRACTURES.clear();
+        WAVES.clear();
+
+        if (!tuning.shockOneCrash()) {
             RESERVOIR.clear();
-            FRACTURES.clear();
-            WAVES.clear();
+            TOUCHED.clear();
+            return;
+        }
+        final ObjectIterator<Int2DoubleMap.Entry> entries = RESERVOIR.int2DoubleEntrySet().iterator();
+        while (entries.hasNext()) {
+            final int key = entries.next().getIntKey();
+            if ((key & 1) == 0 || now - TOUCHED.get(key) > tuning.protectRestTicks()) {
+                TOUCHED.remove(key);
+                entries.remove();
+            }
         }
     }
 }

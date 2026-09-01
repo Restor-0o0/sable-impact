@@ -797,6 +797,22 @@ public final class ImpactConfig {
                     "very large wrecks finish what they started, at the price of that tail.")
             .defineInRange("maxTicks", 40, 1, 1200);
 
+    public static final ModConfigSpec.BooleanValue SHOCK_ONE_CRASH = BUILDER
+            .comment("Whether a build's kinetic shock is drawn once per crash rather than once per tick.",
+                    "A crash is not an instant. A hull hitting the ground at speed is still moving on the",
+                    "next tick and the one after, and each of those ticks it is a heavy fast body touching",
+                    "the ground - so each of them refills the kinetic reservoir and buys a fresh set of",
+                    "waves out of energy the build no longer has. What that produces is a wreck that goes on",
+                    "detonating for as long as it is sliding, which is where 'it keeps eating itself after",
+                    "it has stopped' comes from far more than any single wave does.",
+                    "On, the reservoir is filled once and spent down across the whole crash, and it refills",
+                    "only after the build has been left alone for [protect] restTicks - the same rest that",
+                    "hands back the damage budget, so a crash is one event to both. A build that stops and",
+                    "is flown into a cliff a minute later gets a full one again.",
+                    "Only the build's own side works this way. Terrain is refilled per tick on purpose: a",
+                    "hull ploughing a hillside is meant to keep ploughing it for as long as it is moving.")
+            .define("oneCrash", true);
+
     static {
         BUILDER.pop();
     }
@@ -941,6 +957,195 @@ public final class ImpactConfig {
                     "still paying for the first one. Two seconds is longer than any single impact keeps",
                     "breaking things.")
             .defineInRange("restTicks", 40, 1, 12000);
+
+    static {
+        BUILDER.pop();
+    }
+
+    static {
+        BUILDER.comment("Whether a shock is measured against what it hits, rather than paid for out of a purse.",
+                        "This is the difference between a crash that is big and a crash that is strong, and",
+                        "everything under [shock] only knows the first. A wave there carries an amount of",
+                        "energy and every block it meets has a price; it buys what it can afford and stops",
+                        "when it runs out. Which means a large enough crash breaks obsidian exactly as",
+                        "readily as it breaks glass - it simply gets less of it - and a small one breaks",
+                        "nothing at all rather than breaking the windows. Neither is what a crash looks like.",
+                        "Under stress the wave carries an intensity instead, and a block carries a strength.",
+                        "If what arrives is greater, the block fails; if it is not, the block holds and the",
+                        "shock goes through it weakened. Nothing is bought, so nothing can be outspent: a",
+                        "wall of obsidian is not expensive, it is a wall, and a hull that would have eaten",
+                        "through it now runs along it instead and takes out what is behind.",
+                        "The budgets under [shock] are all still in force. They stopped being the physics and",
+                        "went back to being what they were meant to be - a ceiling on how much work one tick",
+                        "may do.")
+                .push("stress");
+    }
+
+    public static final ModConfigSpec.BooleanValue STRESS = BUILDER
+            .comment("Whether shocks are resolved by strength rather than by budget. Off is the pre-1.7",
+                    "behaviour exactly: waves priced per block out of an energy purse, no failure modes, and",
+                    "no fragile pass. Everything else in this section does nothing while it is off.")
+            .define("stress", true);
+
+    public static final ModConfigSpec.DoubleValue STRESS_INTENSITY_SCALE = BUILDER
+            .comment("Intensity per kilojoule the crash is carrying, which is the one number that decides how",
+                    "hard a given crash is under stress. Everything else here is a ratio against it.",
+                    "It is worth knowing the sizes involved. A four-thousand-block stone ship is about eight",
+                    "tonnes, so at twenty metres a second it arrives with roughly 1600 kJ: at 0.02 that is an",
+                    "intensity of 32 against stone at about 1.4, which is a dozen or so courses of stone",
+                    "before it is spent and a great deal further through anything softer. A nudge into a wall",
+                    "at 50 kJ is an intensity of 1, which takes the glass and leaves the stone - which is the",
+                    "whole point of the mode.",
+                    "Raise it and crashes get more violent without getting any wider reach through strong",
+                    "material; the falloff under [shock] is what governs reach.")
+            .defineInRange("intensityScale", 0.02, 0.0, 1000.0);
+
+    public static final ModConfigSpec.DoubleValue BRITTLE_THRESHOLD = BUILDER
+            .comment("What a brittle block's strength is worth against a shock, as a multiple of its ordinary",
+                    "resistance. Glass, ice, panes, terracotta - things that are not soft but that shatter",
+                    "rather than deform. Far below 1 because being hard to mine and being hard to shatter are",
+                    "unrelated properties, and every number this mod had before conflated them.")
+            .defineInRange("brittleThreshold", 0.15, 0.0, 100.0);
+
+    public static final ModConfigSpec.DoubleValue DUCTILE_THRESHOLD = BUILDER
+            .comment("The same for material that bends before it breaks - metal, wood, wool, chains. It gives",
+                    "way at a much higher shock than its mining hardness suggests, because a shock is not a",
+                    "pickaxe: a steel plate dents where stone of the same hardness cracks through.",
+                    "This is what lets a metal-framed ship keep its frame and lose its skin.")
+            .defineInRange("ductileThreshold", 2.0, 0.0, 100.0);
+
+    public static final ModConfigSpec.DoubleValue STRUCTURAL_THRESHOLD = BUILDER
+            .comment("The same for everything else - stone, concrete, earth, the ordinary mass of a build.",
+                    "Left at 1 so its resistance means what it always meant and the other two modes are read",
+                    "as departures from it.")
+            .defineInRange("structuralThreshold", 1.0, 0.0, 100.0);
+
+    public static final ModConfigSpec.DoubleValue BRITTLE_TRANSMIT = BUILDER
+            .comment("How much of a shock gets through a brittle block that did not break, as a fraction.",
+                    "Low: glass that survives a shock survives it by not carrying it. This is what stops a",
+                    "wave from travelling along a window as though it were a girder.")
+            .defineInRange("brittleTransmit", 0.15, 0.0, 1.0);
+
+    public static final ModConfigSpec.DoubleValue DUCTILE_TRANSMIT = BUILDER
+            .comment("The same through ductile material. Middling - metal and wood carry a shock well, which",
+                    "is exactly why a hull with a steel keel rings end to end when it lands on one end.")
+            .defineInRange("ductileTransmit", 0.55, 0.0, 1.0);
+
+    public static final ModConfigSpec.DoubleValue STRUCTURAL_TRANSMIT = BUILDER
+            .comment("The same through structural material, which carries a shock best of all. High enough",
+                    "that a stone bulkhead too strong to break is not the end of the crash but a thing the",
+                    "crash passes through on its way to whatever is behind it - and that is the behaviour",
+                    "the whole mode exists for: the deck holds, the glass on the far side of it does not.")
+            .defineInRange("structuralTransmit", 0.8, 0.0, 1.0);
+
+    public static final ModConfigSpec.DoubleValue STRESS_PASS_ON = BUILDER
+            .comment("How much of what is left after a block fails carries on past it, as a fraction.",
+                    "A block that breaks takes its own strength out of the shock; this decides how much of",
+                    "the excess the next block sees. Below 1 because breaking a block is not free even when",
+                    "the shock could afford it - it is where the energy goes.",
+                    "Note that this is applied after the subtraction and the transmit fractions above are",
+                    "applied instead of it, so a wave dies faster through what it destroys than through what",
+                    "holds. That is the right way round: rubble does not conduct.")
+            .defineInRange("passOn", 0.6, 0.0, 1.0);
+
+    public static final ModConfigSpec.DoubleValue STRESS_BACKING = BUILDER
+            .comment("How much of a block's strength comes from being held by its neighbours rather than from",
+                    "what it is made of, as a fraction of the whole.",
+                    "A tile out of its frame is easier to knock out than the same stone in a mountain, and on",
+                    "a hull the blocks with nothing behind them are the skin - the surface a crash ought to",
+                    "lose first and the one it was losing last. At 0.25 a block with all six neighbours is at",
+                    "full strength and a lone plate hanging in the air is at three quarters of it.",
+                    "0 disables the neighbour count entirely, which is a little cheaper and a little duller.")
+            .defineInRange("backing", 0.25, 0.0, 1.0);
+
+    public static final ModConfigSpec.DoubleValue STRESS_FLOOR = BUILDER
+            .comment("The intensity below which a shock stops travelling. Without it a wave attenuates towards",
+                    "zero without ever reaching it and keeps walking through material it can no longer harm,",
+                    "which costs a great deal and does nothing.",
+                    "Raise it to keep waves tight around what they actually broke.")
+            .defineInRange("floor", 0.05, 0.0, 100.0);
+
+    public static final ModConfigSpec.IntValue STRESS_MAX_SCAN = BUILDER
+            .comment("How many blocks one wave may look at over its whole life, whether or not it breaks them.",
+                    "Under stress a wave no longer pays for the blocks it fails to break, so the break",
+                    "ceilings under [shock] stop bounding its walk - a shock running down a corridor of",
+                    "material it cannot touch is free, and this is what makes it finite. It should be several",
+                    "times maxBlocksPerImpact; a wave that hits it is a wave that has gone wandering.")
+            .defineInRange("maxScan", 24000, 0, 1000000);
+
+    public static final ModConfigSpec.BooleanValue GLASS_RUN = BUILDER
+            .comment("Whether the windows go out along the whole length of the ship.",
+                    "It is the single most recognisable thing about a crash of this size and a shock wave",
+                    "cannot produce it: a wave that reached far enough to take the glass at the far end would",
+                    "have taken every deck between here and there on the way, because reach and selectivity",
+                    "are the same setting to it. So the fragile blocks get a pass of their own, running much",
+                    "further than the wave, costing nothing per block it passes through, and breaking only",
+                    "what shatters.",
+                    "It travels through material rather than through space - air ends a branch - so it follows",
+                    "the decks and bulkheads instead of leaping across the sky to a greenhouse next door.")
+            .define("glass", true);
+
+    public static final ModConfigSpec.IntValue GLASS_REACH = BUILDER
+            .comment("How far through a build the fragile pass runs, in blocks. This is meant to be most of a",
+                    "large ship rather than a neighbourhood of the impact: the whole point is that the far",
+                    "end loses its windows.")
+            .defineInRange("glassReach", 64, 0, 512);
+
+    public static final ModConfigSpec.IntValue GLASS_SCAN_BUDGET = BUILDER
+            .comment("How many blocks one fragile pass may read before it gives up. A fill through solid",
+                    "material is cheap per block and there can be a great many blocks, so this is what keeps",
+                    "a run through a mountain from costing a tick. It is a read budget and not a break one:",
+                    "a pass that spends it all on stone and finds no glass has done nothing wrong, only",
+                    "nothing useful.")
+            .defineInRange("glassScanBudget", 20000, 0, 1000000);
+
+    public static final ModConfigSpec.IntValue GLASS_MAX_PER_IMPACT = BUILDER
+            .comment("The most fragile blocks one pass may take out. A greenhouse is a lot of panes.")
+            .defineInRange("glassMaxPerImpact", 512, 0, 65536);
+
+    public static final ModConfigSpec.IntValue GLASS_MAX_RUNS = BUILDER
+            .comment("How many fragile passes one body may set going per tick. A landing is one crash however",
+                    "many contacts it reports, and the fill reaches the whole build from any of them, so the",
+                    "second run finds the windows the first one already broke and is pure cost. Kept above 1",
+                    "only because a build split in two by the crash has two halves to run through.")
+            .defineInRange("glassMaxRuns", 2, 0, 256);
+
+    static {
+        BUILDER.pop();
+    }
+
+    static {
+        BUILDER.comment("What the mod is allowed to do to make itself cheaper, none of which changes what",
+                        "breaks. These exist as switches rather than as plain behaviour because each one",
+                        "reaches into something outside this mod, and a Sable release that reshapes what they",
+                        "reach into should cost a frame rate and not a world.")
+                .push("optimize");
+    }
+
+    public static final ModConfigSpec.BooleanValue BATCH_BOUNDS = BUILDER
+            .comment("Whether Sable's plot bounding boxes are rebuilt once at the end of a break pass instead",
+                    "of once per block removed.",
+                    "This is the largest single cost in a crash and none of it belongs to this mod. Sable",
+                    "keeps a bounding box per plot chunk, and removing a block that sits on a face of that",
+                    "box makes it rebuild the box by scanning every non-empty section of the chunk in full -",
+                    "four thousand block reads apiece. On a hull losing its keel every block removed is on a",
+                    "face, so five hundred blocks in a tick is millions of reads, and that, rather than",
+                    "anything the mod itself does, is the second the game stops for on a big crash.",
+                    "The rebuild depends only on what the chunk ends up containing, so running it once after",
+                    "the pass gives the identical box. Only shrinking is deferred; a box that has to grow",
+                    "grows at once, because that is cheap and because a box briefly too large is wrong in the",
+                    "direction nothing minds.",
+                    "Off restores the stock behaviour, and stock behaviour is correct - only slow.")
+            .define("batchBounds", true);
+
+    public static final ModConfigSpec.BooleanValue CACHE_CHUNKS = BUILDER
+            .comment("Whether the passes that walk through a build remember the chunk they were last in.",
+                    "A wave, a collapse and a fragile pass all read blocks one step at a time along a path,",
+                    "and consecutive steps are almost always in the same chunk - so looking the chunk up",
+                    "again per block is a hash lookup per block for an answer that has not changed. Cheap,",
+                    "dull, and entirely safe: the cache lives for the length of one pass and holds a chunk",
+                    "the pass is already holding open.")
+            .define("cacheChunks", true);
 
     static {
         BUILDER.pop();
@@ -1417,7 +1622,27 @@ public final class ImpactConfig {
                          boolean protectBuilds,
                          int protectMaxPerTick,
                          int protectMaxPerImpact,
-                         int protectRestTicks) {
+                         int protectRestTicks,
+                         boolean shockOneCrash,
+                         boolean stress,
+                         double intensityScale,
+                         double brittleThreshold,
+                         double ductileThreshold,
+                         double structuralThreshold,
+                         double brittleTransmit,
+                         double ductileTransmit,
+                         double structuralTransmit,
+                         double stressPassOn,
+                         double stressBacking,
+                         double stressFloor,
+                         int stressMaxScan,
+                         boolean glass,
+                         int glassReach,
+                         int glassScanBudget,
+                         int glassMaxPerImpact,
+                         int glassMaxRuns,
+                         boolean batchBounds,
+                         boolean cacheChunks) {
 
         /**
          * Reads the whole spec once, applying {@code impactStrength} to the thresholds it eases on the way.
@@ -1540,12 +1765,50 @@ public final class ImpactConfig {
                     PROTECT.get(),
                     PROTECT_MAX_PER_TICK.get(),
                     PROTECT_MAX_PER_IMPACT.get(),
-                    PROTECT_REST_TICKS.get());
+                    PROTECT_REST_TICKS.get(),
+                    SHOCK_ONE_CRASH.get(),
+                    STRESS.get(),
+                    STRESS_INTENSITY_SCALE.get() * Math.max(1.0, strength),
+                    ImpactResolver.eased(BRITTLE_THRESHOLD.get(), strength),
+                    ImpactResolver.eased(DUCTILE_THRESHOLD.get(), strength),
+                    ImpactResolver.eased(STRUCTURAL_THRESHOLD.get(), strength),
+                    BRITTLE_TRANSMIT.get(),
+                    DUCTILE_TRANSMIT.get(),
+                    STRUCTURAL_TRANSMIT.get(),
+                    STRESS_PASS_ON.get(),
+                    STRESS_BACKING.get(),
+                    STRESS_FLOOR.get(),
+                    STRESS_MAX_SCAN.get(),
+                    GLASS_RUN.get(),
+                    GLASS_REACH.get(),
+                    GLASS_SCAN_BUDGET.get(),
+                    GLASS_MAX_PER_IMPACT.get(),
+                    GLASS_MAX_RUNS.get(),
+                    BATCH_BOUNDS.get(),
+                    CACHE_CHUNKS.get());
         }
 
         /** The lowest speed at which any block, however soft and however heavy the ram, could give way. */
         public double breakSpeedFloor() {
             return Math.min(this.minImpactSpeed, this.crushSpeed);
+        }
+
+        /** What the block's own strength is multiplied by, given how it fails. */
+        public double threshold(final Failure failure) {
+            return switch (failure) {
+                case BRITTLE -> this.brittleThreshold;
+                case DUCTILE -> this.ductileThreshold;
+                case STRUCTURAL -> this.structuralThreshold;
+            };
+        }
+
+        /** What a block of this kind lets through when it does not break. */
+        public double transmit(final Failure failure) {
+            return switch (failure) {
+                case BRITTLE -> this.brittleTransmit;
+                case DUCTILE -> this.ductileTransmit;
+                case STRUCTURAL -> this.structuralTransmit;
+            };
         }
     }
 }

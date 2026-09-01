@@ -198,6 +198,28 @@ public final class PendingBreaks {
 
         final long started = System.nanoTime();
         final long deadline = started + (long) (ImpactConfig.MAX_TICK_MILLIS.get() * 1.0e6);
+        BoundsBatch.open(tuning);
+        try {
+            breakPass(level, tuning, started, deadline, timed);
+        } finally {
+            BoundsBatch.close();
+        }
+    }
+
+    /**
+     * Everything this tick destroys, inside one open batch.
+     *
+     * <p>Split out from the tick handler for the sake of that batch and nothing else. What it brackets is
+     * every path in the mod that can remove a block, so the bounding boxes Sable would otherwise rebuild
+     * once per removal are rebuilt once at the end of all of them - and the try/finally is the whole reason
+     * it is worth a method: a batch left open by an exception would defer work that never gets done, which
+     * is a build whose collision shape has stopped matching its blocks.
+     */
+    private static void breakPass(final ServerLevel level,
+                                  final ImpactConfig.Tuning tuning,
+                                  final long started,
+                                  final long deadline,
+                                  final boolean timed) {
         int broken = Collapse.tick(level, tuning, deadline);
         broken += ShockWave.resume(level, tuning, deadline);
 

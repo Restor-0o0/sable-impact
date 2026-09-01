@@ -12,7 +12,9 @@ mod under other names. What follows is an honest accounting of what is here, wha
 be given up to get the rest — grouped into phases so that each one can be judged on its own before the next
 is started.
 
-Nothing in this document is implemented.
+**Status.** Phase 3 is done, in full, and shipped in 1.7.0. Phase 1 is done in the part that mattered
+most (1.3 and 1.6, for the build's own energy). Phases 2 and 4 are not built, and 5 is a list of things that
+will stay true whatever else happens. Each item below carries its own mark.
 
 ---
 
@@ -20,11 +22,11 @@ Nothing in this document is implemented.
 
 | The request | What exists | What is wrong with it |
 |---|---|---|
-| Energy from speed and mass | `shock.kineticScale` prices a wave off the striking body's ½mv² | Recomputed per contact instead of once per crash, so a hundred contacts are a hundred crashes that happen to share a tick |
+| Energy from speed and mass | `shock.kineticScale` prices a wave off the striking body's ½mv² | ~~Recomputed per contact~~ — fixed in 1.7 by `shock.oneCrash`: one reservoir per build, drawn down until the build has been quiet as long as its damage budget needs |
 | Carried through the hull | `ShockWave` walks block to block and stops at gaps | It spends by *distance travelled*, not by *what it travelled through*. Sixteen blocks of wool cost what sixteen blocks of steel cost |
 | Decreasing as it goes | `shock.falloff`, one number | Isotropic and material-blind. A shock through a hull is neither |
 | Heavy damage at the impact | `shock.cost` prices a block, near blocks are reached first | Real enough |
-| Glass knocked out, soft structures folded | `fragile` in the material table | Only used to hand a block back to Sable to shatter. There is no threshold at which glass goes and structure stays |
+| Glass knocked out, soft structures folded | `fragile` in the material table, and since 1.7 the whole of `[stress]` | Done. Three failure modes, a threshold rather than a price, and a fragile pass of its own that outruns the wave |
 | The rest falls down | `Collapse` | Not a support model at all — a fixed-speed front with a taper, tuned to look right. It does not ask what was holding anything up |
 
 So this is not a rewrite from nothing. It is four specific replacements and one new pass.
@@ -41,14 +43,19 @@ energy. Everything else is downstream of fixing that.
   another build is priced the same either way round.
 - [ ] **1.2** Add the rotational term, `½·I·ω²`. A ship that comes down nose-first and slews carries real
   energy in the yaw, and ignoring it makes every glancing crash too gentle.
-- [ ] **1.3** Hold the result in one ledger per (build, crash), keyed the way `BuildDamage` already keys a
+- [x] **1.3** Hold the result in one ledger per (build, crash), keyed the way `BuildDamage` already keys a
   build, and let *every* consumer draw on it: crushing, waves, cracks, collapse, and debris.
+  *Partly. The reservoir now persists across the ticks of one crash and is cleared on the same rest timer
+  `BuildDamage` uses, so waves and cracks share one energy per crash. Crushing, collapse and debris still
+  have budgets of their own.*
 - [ ] **1.4** Charge the energy actually spent. A block thrown at `v` costs `½·m_block·v²`; a block broken
   costs its own resistance; a block merely cracked costs a fraction. Today debris velocity is free.
 - [ ] **1.5** Subtract what the crash does not spend on damage: rebound (`rebound`, `reboundSpin`), drag
   (`breakDragMass`), and a flat share for deformation that Minecraft cannot show.
-- [ ] **1.6** End the crash when the ledger is empty rather than when a per-system budget runs out. This is
+- [x] **1.6** End the crash when the ledger is empty rather than when a per-system budget runs out. This is
   what makes a small bump small and a real crash large, without either being tuned separately.
+  *Done for the build's own side. Terrain is still refilled per tick, deliberately: a hull ploughing a
+  hillside is meant to keep ploughing it.*
 - [ ] **1.7** Keep a scale factor over the whole thing. A 200-tonne ship at 30 m/s carries about 90 MJ; at any
   honest price per block that is the entire ship, every time. The model has to be deliberately un-real
   somewhere, and one explicit dial is better than the current five implicit ones.
@@ -84,21 +91,29 @@ frontier-set does not track. **Risk:** this is where the tick time will go.
 Today a wave *buys* blocks: it has a budget and a block has a price. A wave with a large budget breaks
 obsidian as readily as glass, just for more money. That is why a big crash eats everything indiscriminately.
 
-- [ ] **3.1** Break a block when the energy density arriving at it exceeds its strength, and not otherwise.
+- [x] **3.1** Break a block when the energy density arriving at it exceeds its strength, and not otherwise.
   Energy that arrives below the threshold is *not spent* — it passes on. This one change is what produces
   the requested behaviour on its own: the glass goes, the structure holds, and the energy keeps travelling.
-- [ ] **3.2** Give the material table three failure modes rather than one strength:
+  *`[stress]`, on by default. `stress = false` restores the budgeted wave.*
+- [x] **3.2** Give the material table three failure modes rather than one strength:
   - **brittle** (glass, ice, lamps) — a very low threshold, shatters, and passes almost nothing on;
   - **ductile** (metal, wool, wood) — a high threshold, absorbs a great deal without breaking;
   - **structural** (stone, blocks bearing load) — fails at the threshold and stops carrying.
-- [ ] **3.3** Give fragile blocks their own cheap pass with a much lower threshold and a much longer reach
+- [x] **3.3** Give fragile blocks their own cheap pass with a much lower threshold and a much longer reach
   than the structural wave, so "the shock ran the length of the ship and took the windows out" is one flood
   fill over glass, not a full wave.
-- [ ] **3.4** Weight the threshold by how well the block is held — `backingWeight` and `hullBackingWeight`
+  *`stress.glass`. It fills through solid material rather than through space, so it follows the decks.*
+- [x] **3.4** Weight the threshold by how well the block is held — `backingWeight` and `hullBackingWeight`
   already do this for contacts and should feed the same number here.
+  *`stress.backing`, on a neighbour count rather than on a raycast: a wave reads thousands of blocks and the
+  contact-side backing is far too expensive to run per block.*
 
 **Cost:** low to moderate. The material table exists; this is mostly new fields and a changed comparison.
 **Risk:** low. This is the phase most likely to be worth doing on its own, even if nothing else here is.
+
+**Built in 1.7.0**, and the estimate held. The one thing it did not predict: with nothing being bought, the
+break ceilings stopped bounding the walk — a shock passing through material it cannot break is free — so the
+mode needed a scan ceiling and an intensity floor of its own to stay finite.
 
 ---
 
@@ -138,8 +153,10 @@ Worth agreeing on before the rest, because they bound how good this can get.
   requirement.
 - [ ] **5.4** **Block entities cannot fly.** A falling block carries no block entity data, so a chest thrown
   as debris would quietly empty itself. Machinery either drops as items or stays where it is.
-- [ ] **5.5** **Everything stays switchable.** Every phase above ships behind its own flag with the current
+- [x] **5.5** **Everything stays switchable.** Every phase above ships behind its own flag with the current
   behaviour as the `false` case, as the rest of this mod does.
+  *Held so far: `stress`, `stress.glass`, `shock.oneCrash` and both `[optimize]` switches each restore the
+  previous behaviour exactly.*
 
 ---
 
@@ -151,3 +168,9 @@ Phase 3 is cheap, low-risk, and produces the behaviour actually described in the
 the length, structure holding, destruction concentrated where it touched — without any of the rest.
 Phase 1 is the correctness fix that everything else needs. Phase 2 is what makes it read as a structure.
 Phase 4 is the largest and the riskiest, and the current collapse is a serviceable stand-in until it exists.
+
+**What is left.** 3 is done and 1 is done where it was cheap to do (1.3, 1.6); 1.1, 1.2, 1.4, 1.5 and 1.7
+remain, and all of them want Sable's `MassData` and the contact manifold rather than the numbers this mod
+already has. Phase 2 is next and is now the obvious gap: a shock still attenuates by `falloff` per block
+travelled as well as by what it travelled through, so distance is still doing work that material should be
+doing alone. Phase 4 is unchanged and still the riskiest thing in this document.

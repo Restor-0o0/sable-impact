@@ -66,6 +66,10 @@ public final class ImpactStats {
     }
     private static long crushScanned;
     private static long carveBroken;
+    private static long boundsDeferred;
+    private static long boundsRebuilt;
+    private static long glassScanned;
+    private static long glassBroken;
 
     /**
      * The four jobs a sweep does, timed apart.
@@ -83,7 +87,9 @@ public final class ImpactStats {
         /** Deciding what a contact does to the blocks either side of it, inside the solver's own step. */
         CONTACT,
         /** Deciding whether a block keeps its own collider voxel, inside a remesh. */
-        VOXEL
+        VOXEL,
+        /** Handing Sable back the plot bounds a whole break pass put off, once instead of thousands. */
+        BOUNDS
     }
 
     private ImpactStats() {
@@ -133,6 +139,42 @@ public final class ImpactStats {
     public static void noteDetail(final int level) {
         if (level > worstDetail) {
             worstDetail = level;
+        }
+    }
+
+    /**
+     * Bounding-box rebuilds a break pass put off, and how many it actually ran at the end of it.
+     *
+     * <p>The two figures beside each other are the whole argument for batching them, and the reason it was
+     * worth going looking: each deferred rebuild is a full scan of every non-empty section of a plot chunk,
+     * so the difference between the two numbers is not a saving of a few microseconds but of tens of
+     * thousands of block reads apiece. A tick that defers two thousand and rebuilds three is the mod
+     * refusing to spend a second.
+     */
+    public static void addBoundsDeferred() {
+        if (enabled()) {
+            boundsDeferred++;
+        }
+    }
+
+    /** The rebuilds a flush actually ran, which is the number the deferred count has to be read against. */
+    public static void addBounds(final int rebuilt) {
+        if (enabled()) {
+            boundsRebuilt += rebuilt;
+        }
+    }
+
+    /**
+     * What the fragile pass looked at and what it took out.
+     *
+     * <p>Kept apart because they answer different complaints. A high break count with a low scan is the
+     * pass working; a high scan with no breaks is a fill wandering through a hull that has no windows in it,
+     * which is the failure mode {@code glassScanBudget} exists to bound.
+     */
+    public static void addGlass(final int scanned, final int broken) {
+        if (enabled()) {
+            glassScanned += scanned;
+            glassBroken += broken;
         }
     }
 
@@ -284,6 +326,14 @@ public final class ImpactStats {
                 Math.round(PHASE_CALLS[Phase.VOXEL.ordinal()].sum() / ticks),
                 millis(PHASE_NANOS[Phase.VOXEL.ordinal()].sum() / ticks));
 
+        if (boundsDeferred > 0 || glassScanned > 0) {
+            LOG.info("impact: plot bounds {} rebuilds deferred into {} run, costing {}ms/tick; "
+                            + "fragile pass read {} blocks/tick and took {}/tick",
+                    boundsDeferred, boundsRebuilt,
+                    millis(PHASE_NANOS[Phase.BOUNDS.ordinal()].sum() / ticks),
+                    Math.round(glassScanned / ticks), Math.round(glassBroken / ticks));
+        }
+
         if (crushMass > 0.0) {
             LOG.info("impact: crush mass {}, footprint {} blocks, pressure {}, {} contacts, {} under and {} side crushed",
                     Math.round(crushMass), String.format("%.1f", crushFootprint),
@@ -323,6 +373,10 @@ public final class ImpactStats {
         hullsQuiet = 0;
         crushScanned = 0L;
         carveBroken = 0L;
+        boundsDeferred = 0L;
+        boundsRebuilt = 0L;
+        glassScanned = 0L;
+        glassBroken = 0L;
         worstMineNanos = 0L;
         worstDetail = 0;
         for (int phase = 0; phase < PHASE_NANOS.length; phase++) {

@@ -50,7 +50,7 @@ public final class MaterialOverrides {
     private static final Logger LOG = LoggerFactory.getLogger("create_aeronautics_impact");
 
     /** No rule said anything, so every question falls through to what the block itself says. */
-    public static final Rule NONE = new Rule(null, null, null, null, null);
+    public static final Rule NONE = new Rule(null, null, null, null, null, null);
 
     /**
      * What the config has decided about a block, with null for everything it did not mention.
@@ -64,12 +64,14 @@ public final class MaterialOverrides {
      *                       the way Sable's own fragile blocks do.
      * @param soft           whether a hull passes through the block the way it passes through undergrowth,
      *                       clearing it rather than being stopped by it.
+     * @param failure        how the block gives way under a shock, overriding what its sound implied.
      */
     public record Rule(@Nullable Double resistance,
                        @Nullable Double scale,
                        @Nullable Boolean indestructible,
                        @Nullable Boolean fragile,
-                       @Nullable Boolean soft) {
+                       @Nullable Boolean soft,
+                       @Nullable Failure failure) {
 
         /** This rule with everything the more specific one had an opinion about taken from that one instead. */
         Rule under(final Rule finer) {
@@ -78,12 +80,13 @@ public final class MaterialOverrides {
                     finer.scale != null ? finer.scale : this.scale,
                     finer.indestructible != null ? finer.indestructible : this.indestructible,
                     finer.fragile != null ? finer.fragile : this.fragile,
-                    finer.soft != null ? finer.soft : this.soft);
+                    finer.soft != null ? finer.soft : this.soft,
+                    finer.failure != null ? finer.failure : this.failure);
         }
 
         boolean empty() {
-            return this.resistance == null && this.scale == null
-                    && this.indestructible == null && this.fragile == null && this.soft == null;
+            return this.resistance == null && this.scale == null && this.indestructible == null
+                    && this.fragile == null && this.soft == null && this.failure == null;
         }
 
         /** The strength this rule leaves a block with, given what the block's own stats came to. */
@@ -105,6 +108,11 @@ public final class MaterialOverrides {
         /** Whether the block is soft, given what its collision shape said. */
         public boolean soft(final boolean derived) {
             return this.soft != null ? this.soft : derived;
+        }
+
+        /** How the block fails, given what its sound implied. */
+        public Failure failure(final Failure derived) {
+            return this.failure != null ? this.failure : derived;
         }
     }
 
@@ -244,6 +252,7 @@ public final class MaterialOverrides {
         Boolean indestructible = null;
         Boolean fragile = null;
         Boolean soft = null;
+        Failure failure = null;
 
         for (int i = 1; i < parts.length; i++) {
             final String setting = parts[i];
@@ -260,6 +269,7 @@ public final class MaterialOverrides {
                 case "indestructible" -> (indestructible = flag(line, setting, value)) != null;
                 case "fragile" -> (fragile = flag(line, setting, value)) != null;
                 case "soft" -> (soft = flag(line, setting, value)) != null;
+                case "failure" -> (failure = failure(line, setting, value)) != null;
                 default -> {
                     LOG.warn("materialOverrides: no setting called [{}], in [{}]", key, line);
                     yield false;
@@ -270,7 +280,19 @@ public final class MaterialOverrides {
             }
         }
 
-        return new Rule(resistance, scale, indestructible, fragile, soft);
+        return new Rule(resistance, scale, indestructible, fragile, soft, failure);
+    }
+
+    /** One of the three failure modes, case-insensitively, or null with a line in the log. */
+    @Nullable
+    private static Failure failure(final String line, final String setting, final String value) {
+        for (final Failure mode : Failure.values()) {
+            if (mode.name().equalsIgnoreCase(value)) {
+                return mode;
+            }
+        }
+        LOG.warn("materialOverrides: [{}] is not brittle, ductile or structural, in [{}]", setting, line);
+        return null;
     }
 
     /** A non-negative number within the range the config allows, or null with a line in the log. */

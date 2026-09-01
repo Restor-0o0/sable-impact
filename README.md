@@ -22,9 +22,13 @@ speed for every block it takes.
 - **Boring.** Above a speed threshold the hull cuts a tunnel rather than skidding, giving up a share of its
   momentum for every block removed.
 - **Shock.** A crash hard enough is felt past the blocks it happened to touch. The striking body's kinetic
-  energy becomes a budget that spreads through whatever the broken block was attached to, spending each
-  block's resistance as it goes, so a hull dropped from height comes apart instead of losing the floor it
-  landed on. See [Shock](#shock-when-an-impact-is-felt-past-the-block-it-broke).
+  energy spreads through whatever the broken block was attached to, so a hull dropped from height comes
+  apart instead of losing the floor it landed on. See
+  [Shock](#shock-when-an-impact-is-felt-past-the-block-it-broke).
+- **Stress.** What that shock breaks is decided by strength against strength rather than by what it can
+  afford, so a wall too strong to break is something the crash passes *through* on its way to the glass
+  behind it - and the windows go out along the whole length of a ship whose decks held. See
+  [Stress](#stress-strength-against-strength-not-price-against-purse).
 - **Debris.** Broken blocks are thrown clear as falling blocks and go looking for somewhere to sit when they
   land, instead of vanishing the moment the spot they came down in happens to be taken. See
   [Debris](#debris-what-flies-and-where-it-lands).
@@ -124,6 +128,7 @@ An entry is a **selector**, then one or more **settings**, separated by spaces o
 | `indestructible` | `true` / `false` | `true` is never broken by anything this mod does. `false` takes that away from a block that inherited it from `indestructibleResistance`. |
 | `fragile` | `true` / `false` | `true` shatters the block at `fragileTrigger` rather than weighing it against the hull, the way leaves and glass do. |
 | `soft` | `true` / `false` | `true` makes hulls pass through the block and clear it the way they clear undergrowth. It gives up its collider to do so, so a hull is not stopped by something it is about to mow down. |
+| `failure` | `brittle` / `ductile` / `structural` | How the block gives way under a shock, overriding what its sound implied. See [Stress](#stress-strength-against-strength-not-price-against-purse). |
 
 `resistance` is on the scale the model works in *after* the hardness range has been compressed, not the
 vanilla one: roughly `0.6` for dirt, `1.0` for wood, `1.4` for stone, `3` for obsidian. Turn on
@@ -167,6 +172,15 @@ Ordered by how much they save, and by how visible the cost is:
 | `maxQuietTicks = 60` | A lot on worlds full of parked airships. | A tower thrown up under a hovering build goes unnoticed for up to three seconds. |
 | `clearSoftBlocks = false` | A swept slab per axis on every moving hull. | Grass and flowers stay standing where a hull has been. Nothing is stopped by them either way. |
 | `crushBlocks = false` | The whole weight model. | Stationary and slow-moving builds stop marking the ground at all. |
+
+One saving is not in that table because it is on by default and there is no reason to turn it off:
+`optimize.batchBounds`. It is worth knowing about anyway, because it is larger than everything above it put
+together. Sable keeps a bounding box per plot chunk and rebuilds it, by scanning every non-empty section of
+that chunk block by block, each time a block on one of its faces is removed - and on a hull losing its keel
+every removed block is on a face. Five hundred blocks in a tick is on the order of sixteen million block
+reads, none of which are this mod's own work and all of which show up as this mod's hitch. Batching them into
+one rebuild per chunk at the end of the pass gives the identical box. `false` restores Sable's own behaviour,
+which is correct and slow.
 
 `logPerformance = true` prints this mod's share of the tick to the log every five seconds, broken down by
 pass. It is worth turning on exactly once: when the game hitches, it is what says whether the hitch is here
@@ -432,6 +446,107 @@ slowly rather than one that stops half-done.
 
 Bear in mind that a shock only starts where a contact already broke something. If nothing at all is breaking,
 this chapter is not the problem - see [Where to start](#where-to-start).
+
+## Stress: strength against strength, not price against purse
+
+A shock as the last chapter describes it *buys* blocks. It carries an amount of energy, every block has a
+price, and it takes what it can afford. That is a perfectly good model of how much damage a crash does, and
+a poor model of what it does it to - because a purse large enough buys anything. A crash big enough to level
+a stone deck buys the obsidian bulkhead behind it too; it simply gets less of it. And a crash too small to
+afford the cheapest block on the list leaves the windows in.
+
+Neither is what happens. What decides whether something breaks is not how much the crash has left, it is
+whether what arrives at that block is stronger than that block.
+
+So under `[stress]` the wave carries an *intensity* rather than a budget, and each block it meets carries a
+*strength*. If the intensity is greater, the block fails. If it is not, the block holds - and the shock is
+not over. It goes through, weaker, and keeps looking.
+
+That last sentence is the whole chapter. A budgeted wave that meets a wall it cannot pay for stops, because
+"too expensive" and "the end of the world" are the same answer to it. A measured one has somewhere else to
+be: it runs along the bulkhead, through it, and out into the glass on the far side. Which is why a hull now
+loses its windows down its whole length and keeps the deck that stopped the wave.
+
+### How hard a crash is
+
+One number sets the scale: `intensityScale`, in intensity per kilojoule the striking body is carrying.
+
+Some sizes, because they are not obvious. Sable weighs a plain block at about a kilogram and stone at two, so
+a four-thousand-block stone ship is roughly eight tonnes. At twenty metres a second it arrives with about
+1600 kJ, which at the shipped `0.02` is an intensity of **32**. Stone stands at about `1.4`. So that crash
+takes five or six courses of stone in a straight line - a hole several metres across, since the wave spreads
+in every direction at once - and a great deal further through anything softer.
+
+A wing clipping a tower is more like 50 kJ, so an intensity of **1**. That is under stone and over glass, and
+what it does is take out the windows and scuff the paint. Nothing else in this mod could tell those two
+crashes apart except by how much they were allowed to spend.
+
+Raising `intensityScale` makes crashes more violent. It does not make them reach further through material
+they could already break - `falloff` and the ceilings under `[shock]` still govern that.
+
+### How a block fails
+
+Vanilla has no property that says what a block is made of. Hardness is a pickaxe tier and blast resistance is
+an explosion table, and neither can tell a steel plate from a slab of stone of the same nominal toughness.
+What every block does have, in every mod, is the sound it makes when you walk on it - and an author who gave
+their block the metal sound stated what it is made of far more deliberately than they ever chose its
+hardness. So that is what the mode is derived from, and `materialOverrides ... failure=` is how a pack says
+otherwise.
+
+| Mode | What it is | Threshold | Passes on when it holds |
+|---|---|---|---|
+| `brittle` | Glass, ice, panes, anything already marked `fragile` | `brittleThreshold`, far below 1 | `brittleTransmit`, very little - glass does not conduct a shock |
+| `ductile` | Metal, copper, chains, wood, wool | `ductileThreshold`, well above 1 - it bends first | `ductileTransmit`, a good deal - a steel keel rings end to end |
+| `structural` | Stone, concrete, earth, everything else | `structuralThreshold`, `1.0` by definition | `structuralTransmit`, the most - a deck carries a shock well |
+
+Being hard to mine and being hard to shatter are unrelated properties, and every number this mod had before
+1.7 conflated them. Obsidian is genuinely tough; a glass pane with the same blast resistance would not be.
+
+### What a block costs the shock
+
+A block that **fails** takes its own strength out of the shock and hands the excess on, multiplied by
+`passOn`. A block that **holds** takes nothing at all and hands on a fraction of the whole, decided by its
+`...Transmit`. Note which way round that is: a wave dies faster through what it destroys than through what
+stands. Rubble does not conduct.
+
+A shock below `floor` has stopped. Without that a wave attenuates towards zero without ever arriving, and
+spends its time walking through material it can no longer harm.
+
+`backing` is how much of a block's strength comes from being held rather than from what it is made of. A tile
+out of its frame is easier to knock out than the same stone in a mountain, and on a hull the blocks with
+nothing behind them are the skin - the surface a crash ought to lose first and the one it was losing last. At
+the shipped `0.25` a fully surrounded block is at full strength and a lone plate hanging in the air is at
+three quarters of it. `0` switches the neighbour count off entirely.
+
+### The windows, and only the windows
+
+"It hit the ground and the glass went out along its whole length" is the most recognisable thing about a
+crash of this size, and no wave can produce it. A wave that reached the far end would have eaten every deck
+between here and there on the way, because reach and selectivity are the same setting to it.
+
+So the fragile blocks get a pass of their own. It runs `glassReach` blocks - meant to be most of a large
+ship, not a neighbourhood of the impact - costs nothing per block it passes through, and breaks only what
+shatters. It travels *through material*, so air ends a branch: it follows the decks and bulkheads instead of
+leaping across the sky to a greenhouse next door.
+
+`glassScanBudget` bounds what it reads, which is the real cost, and `glassMaxPerImpact` bounds what it
+breaks. `glassMaxRuns` is per body per tick and wants to stay small - the fill reaches the whole build from
+any contact, so a second run mostly finds windows the first one has already taken.
+
+### If it is too destructive, or not destructive enough
+
+- **Everything comes apart too easily.** Lower `intensityScale`. It is the master dial and nothing else here
+  needs touching first.
+- **Strong material feels papery.** Raise `structuralThreshold`, or price the material properly with
+  `materialOverrides ... resistance=`. A threshold is a multiplier on that number, not a replacement for it.
+- **The crash stops at the first wall again.** Raise the `...Transmit` numbers. At `0` a block that holds is
+  a dead end, which is exactly the pre-1.7 behaviour.
+- **Windows survive at the far end.** Raise `glassReach`, then `glassScanBudget` - a pass that runs out of
+  reads stops quietly.
+- **It is spending too long in the wave.** Lower `maxScan`, or raise `floor`. Under stress the break ceilings
+  no longer bound the walk, because a shock passing through material it cannot break is free.
+- **Put it all back.** `stress = false` restores the budgeted wave exactly, and everything in this chapter
+  stops applying.
 
 ## Collapse: what a build does once it has landed
 
@@ -779,6 +894,40 @@ Section `[shock]`. See [Shock](#shock-when-an-impact-is-felt-past-the-block-it-b
 | `maxBlocksPerImpact` | `8192` | Ceiling on blocks one shock may break. |
 | `maxBlocksPerTick` | `6144` | Ceiling on blocks all shocks together may break per level per tick. |
 | `maxTicks` | `40` | How long a wave too big for one tick may keep going before what is left of it is dropped. What stands between a big crash and a wreck that sheds blocks for a minute. |
+| `oneCrash` | `true` | Whether a build's kinetic energy is drawn once per crash rather than once per tick. `false` refills it every tick the build is still moving, which is a wreck that keeps detonating as it slides. Terrain is refilled per tick either way. |
+
+### Stress
+
+Section `[stress]`. See [Stress](#stress-strength-against-strength-not-price-against-purse).
+
+| Option | Default | |
+|---|---|---|
+| `stress` | `true` | Whether shocks are resolved by strength rather than by budget. `false` is the pre-1.7 wave exactly, and everything below stops applying. |
+| `intensityScale` | `0.02` | Intensity per kilojoule the crash is carrying. The master dial for how violent a crash is. |
+| `brittleThreshold` | `0.15` | What a brittle block's strength is worth against a shock, as a multiple of its resistance. |
+| `ductileThreshold` | `2.0` | The same for material that bends before it breaks. |
+| `structuralThreshold` | `1.0` | The same for everything else, left at `1` so the other two read as departures from it. |
+| `brittleTransmit` | `0.15` | What gets through a brittle block that held. Low: glass does not conduct a shock. |
+| `ductileTransmit` | `0.55` | The same through metal and wood. |
+| `structuralTransmit` | `0.8` | The same through stone. High, so a deck too strong to break is a thing the crash goes through rather than the end of it. |
+| `passOn` | `0.6` | What is left of the excess after a block fails. Below `1` because breaking a block is where the energy goes. |
+| `backing` | `0.25` | How much of a block's strength comes from its neighbours rather than its material. `0` disables the neighbour count. |
+| `floor` | `0.05` | The intensity below which a shock has stopped. |
+| `maxScan` | `24000` | Blocks one wave may look at over its whole life. Under stress this rather than the break ceilings is what bounds the walk. |
+| `glass` | `true` | Whether the fragile blocks get their own long pass. |
+| `glassReach` | `64` | How far through a build that pass runs, in blocks. |
+| `glassScanBudget` | `20000` | Blocks one pass may read before giving up. The real cost of it. |
+| `glassMaxPerImpact` | `512` | The most fragile blocks one pass may take out. |
+| `glassMaxRuns` | `2` | How many passes one body may start per tick. Wants to stay small. |
+
+### Optimisation
+
+Section `[optimize]`. Neither of these changes what breaks.
+
+| Option | Default | |
+|---|---|---|
+| `batchBounds` | `true` | Rebuild Sable's plot bounding boxes once at the end of a break pass instead of once per block removed. The single largest saving in this mod, by a very wide margin. |
+| `cacheChunks` | `true` | Let the passes that walk through a build remember the chunk they were last in. |
 
 ### Collapse
 
@@ -950,7 +1099,7 @@ without opening it:
 ./gradlew build -Pbuild_variant=fast
 ```
 
-→ `create_aeronautics_impact-1.6.0-fast.jar`, listed as *Create Aeronautics Impact (Fast)*. Same mod id and
+→ `create_aeronautics_impact-1.7.0-fast.jar`, listed as *Create Aeronautics Impact (Fast)*. Same mod id and
 same version, so only one variant can be installed at a time.
 
 For a release, build every variant in one run:

@@ -5,6 +5,7 @@ import dev.ryanhcode.sable.physics.config.block_properties.PhysicsBlockPropertyT
 import net.minecraft.core.BlockPos;
 import net.minecraft.resources.ResourceLocation;
 import net.minecraft.world.level.BlockGetter;
+import net.minecraft.world.level.block.SoundType;
 import net.minecraft.world.level.block.piston.MovingPistonBlock;
 import net.minecraft.world.level.block.state.BlockState;
 
@@ -23,7 +24,8 @@ public record BlockProfile(int generation,
                            boolean soft,
                            boolean fluid,
                            boolean voxelSolid,
-                           boolean voxelFullBlock) {
+                           boolean voxelFullBlock,
+                           Failure failure) {
 
     // Only reachable where the mixin did not apply, which in practice means a unit test.
     private static final Map<BlockState, BlockProfile> FALLBACK = new ConcurrentHashMap<>();
@@ -103,7 +105,37 @@ public record BlockProfile(int generation,
                 soft,
                 fluid,
                 !air && !soft && (!emptyShape || state.getBlock() instanceof MovingPistonBlock),
-                !air && !soft && state.isCollisionShapeFullBlock(level, pos));
+                !air && !soft && state.isCollisionShapeFullBlock(level, pos),
+                rule.failure(mode(state, rule.fragile(isFragile(state)))));
+    }
+
+    /**
+     * How the block gives way, guessed from the noise it makes.
+     *
+     * <p>There is no property in the game that says what a block is made of. Hardness and blast resistance
+     * are a mining tier and an explosion table, and neither distinguishes a steel plate from a slab of the
+     * same nominal toughness; the material tag hierarchy that used to answer this was removed years ago.
+     * What survives, on every block of every mod, is the sound it makes when you walk on it - and an author
+     * who gives their block the metal sound has stated what it is made of far more deliberately than they
+     * ever chose its hardness.
+     *
+     * <p>So this is a guess, it is a good one, and where it is wrong the material table overrides it by name
+     * exactly as it overrides everything else here.
+     */
+    private static Failure mode(final BlockState state, final boolean fragile) {
+        if (fragile) {
+            return Failure.BRITTLE;
+        }
+        final SoundType sound = state.getSoundType();
+        if (sound == SoundType.GLASS) {
+            return Failure.BRITTLE;
+        }
+        if (sound == SoundType.METAL || sound == SoundType.COPPER || sound == SoundType.CHAIN
+                || sound == SoundType.WOOD || sound == SoundType.WOOL || sound == SoundType.LADDER
+                || sound == SoundType.BAMBOO_WOOD) {
+            return Failure.DUCTILE;
+        }
+        return Failure.STRUCTURAL;
     }
 
     /**

@@ -482,4 +482,72 @@ public final class ImpactResolver {
         final double material = Math.max(0.0, resistance) * Math.max(0.0, cost);
         return Math.max(SHOCK_FLOOR, material) * Math.max(1.0, distance);
     }
+
+    /**
+     * The least a block may ask of a shock that is measuring itself against strengths rather than budgets.
+     * Without it a material the config has priced at nothing would stop nothing and cost nothing, which is
+     * an unbounded walk rather than a free one.
+     */
+    private static final double STRESS_FLOOR = 0.02;
+
+    /**
+     * What a block can take before it fails, which under stress is the only number that decides anything.
+     *
+     * <p>The difference between this and {@link #shockCost} is the whole of phase three. A cost is something
+     * a wave pays out of a purse, so a wave with a large enough purse breaks obsidian exactly as readily as
+     * glass and simply gets less of it - which is why a big crash used to eat everything within reach
+     * indiscriminately. A threshold cannot be outspent. Either what arrives here is stronger than what is
+     * here, or it is not, and no amount of energy elsewhere in the crash changes the answer.
+     *
+     * @param resistance    the block's own strength, after compression and any override.
+     * @param modeThreshold what its failure mode multiplies that by - a fraction for brittle, several times
+     *                      for ductile.
+     * @param backing       how well the block is held by what is around it, at 1 for fully surrounded.
+     */
+    public static double stressThreshold(double resistance, double modeThreshold, double backing) {
+        final double held = Math.max(0.0, resistance)
+                * Math.max(0.0, modeThreshold)
+                * Math.max(0.0, backing);
+        return Double.isNaN(held) ? STRESS_FLOOR : Math.max(STRESS_FLOOR, held);
+    }
+
+    /**
+     * How much of the shock arriving at a block leaves it on the far side.
+     *
+     * <p>This is the other half of phase three, and the half that produces the behaviour actually asked for.
+     * A block that fails takes its threshold out of what arrived and passes the excess on; a block that
+     * holds passes on a share of the whole, <em>having spent nothing</em>. That second case is what lets a
+     * shock run the length of a hull: a bulkhead too strong to break is not the end of the crash, it is a
+     * thing the crash goes through on its way to the glass behind it.
+     *
+     * <p>Both are multiplied down by the material, which is attenuation by what was travelled through rather
+     * than by how far. Sixteen blocks of wool and sixteen blocks of steel stop being the same distance.
+     */
+    public static double stressPassed(double intensity, double threshold, boolean broke,
+                                      double transmit, double passOn) {
+        if (!(intensity > 0.0)) {
+            return 0.0;
+        }
+        final double left = broke
+                ? (intensity - Math.max(0.0, threshold)) * Math.max(0.0, passOn)
+                : intensity * Math.max(0.0, transmit);
+        return Double.isNaN(left) || left <= 0.0 ? 0.0 : left;
+    }
+
+    /**
+     * How much of its nominal strength a block actually has where it stands.
+     *
+     * <p>A tile out of its frame is easier to knock out than the same stone in a mountain, and on a hull the
+     * blocks with nothing behind them are the skin - which is the surface a crash ought to lose first and
+     * the one it was losing last. Counting the solid neighbours is the cheapest statement of that there is,
+     * and at a weight of zero the whole thing costs nothing and changes nothing.
+     *
+     * @param solidNeighbours how many of the six are not air, from 0 to 6.
+     * @param weight          how much of the strength is contributed by backing rather than by material.
+     */
+    public static double stressBacking(int solidNeighbours, double weight) {
+        final double support = Math.clamp(solidNeighbours / 6.0, 0.0, 1.0);
+        final double share = Math.clamp(weight, 0.0, 1.0);
+        return 1.0 - share + share * support;
+    }
 }

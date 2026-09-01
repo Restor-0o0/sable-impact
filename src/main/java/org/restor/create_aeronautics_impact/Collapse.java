@@ -6,7 +6,6 @@ import net.minecraft.core.BlockPos;
 import net.minecraft.core.Direction;
 import net.minecraft.server.level.ServerLevel;
 import net.minecraft.world.level.block.state.BlockState;
-import net.minecraft.world.level.chunk.LevelChunk;
 import org.jetbrains.annotations.Nullable;
 import org.joml.Vector3d;
 import org.joml.Vector3dc;
@@ -77,6 +76,7 @@ public final class Collapse {
     /** The tick this build may be given another front, so one landing is one collapse. */
     private long idleUntil = Long.MIN_VALUE;
 
+    private final ChunkCache chunks = new ChunkCache();
     private final BlockPos.MutableBlockPos cursor = new BlockPos.MutableBlockPos();
     private final Vector3d where = new Vector3d();
 
@@ -303,7 +303,7 @@ public final class Collapse {
         int broken = 0;
 
         for (int step = 0; step < depth && broken < bite; step++, this.cursor.move(up)) {
-            final BlockState state = stateIfLoaded(level, this.cursor);
+            final BlockState state = this.chunks.stateIfLoaded(level, this.cursor);
             if (state == null) {
                 break;
             }
@@ -354,9 +354,4 @@ public final class Collapse {
         return local.z < 0.0 ? Direction.NORTH : Direction.SOUTH;
     }
 
-    /** A front reaches the edge of what is loaded; asking for a block past it would load a chunk from here. */
-    private static @Nullable BlockState stateIfLoaded(final ServerLevel level, final BlockPos pos) {
-        final LevelChunk chunk = level.getChunkSource().getChunkNow(pos.getX() >> 4, pos.getZ() >> 4);
-        return chunk == null ? null : chunk.getBlockState(pos);
-    }
 }
