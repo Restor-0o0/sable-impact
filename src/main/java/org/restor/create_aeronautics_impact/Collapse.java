@@ -68,6 +68,12 @@ public final class Collapse {
     /** The next ring of columns to fail, as a distance from the contact. */
     private int ring;
 
+    /** How far into that ring it got, so a ring interrupted by the build's allowance is resumed, not redone. */
+    private int column;
+
+    /** Set when the build's damage allowance refused a block, which ends the front's tick where it stands. */
+    private boolean stalled;
+
     /** The tick this build may be given another front, so one landing is one collapse. */
     private long idleUntil = Long.MIN_VALUE;
 
@@ -101,7 +107,7 @@ public final class Collapse {
                               final double impactVelocity,
                               final ImpactConfig.Tuning tuning) {
         if (subLevel == null || !tuning.collapse() || subLevel.isRemoved()
-                || Math.abs(impactVelocity) < tuning.shockMinSpeed()) {
+                || Math.abs(impactVelocity) < tuning.collapseMinSpeed()) {
             return;
         }
 
@@ -208,12 +214,17 @@ public final class Collapse {
                         final ImpactConfig.Tuning tuning,
                         final int budget,
                         final long deadline) {
+        this.stalled = false;
         int broken = 0;
         for (int step = 0; step < tuning.collapseSpeed() && !finished(tuning); step++) {
             if (broken >= budget || System.nanoTime() > deadline) {
                 break;
             }
-            broken += fail(level, this.ring++, tuning);
+            broken += fail(level, this.ring, tuning);
+            if (this.stalled) {
+                break;
+            }
+            this.ring++;
         }
         return broken;
     }
@@ -225,20 +236,42 @@ public final class Collapse {
      * because the difference between a square front and a round one is invisible under a collapsing building.
      */
     private int fail(final ServerLevel level, final int distance, final ImpactConfig.Tuning tuning) {
+        final int columns = distance == 0 ? 1 : 8 * distance;
+        int broken = 0;
+        while (this.column < columns) {
+            broken += columnAt(level, distance, this.column, tuning);
+            if (this.stalled) {
+                return broken;
+            }
+            this.column++;
+        }
+        this.column = 0;
+        return broken;
+    }
+
+    /**
+     * The nth column of a ring, counted rather than nested, so a ring the build's allowance cut short can be
+     * picked up next tick at the column it stopped on. Redoing the whole ring instead would find the courses
+     * it already took gone and take the next ones down, which is the build eating itself twice.
+     *
+     * <p>The two sides of the square are laid out first and the two edges between them are interleaved, which
+     * only has to be some fixed order, not a pretty one.
+     */
+    private int columnAt(final ServerLevel level, final int distance, final int index,
+                         final ImpactConfig.Tuning tuning) {
         if (distance == 0) {
             return column(level, 0, 0, distance, tuning);
         }
-
-        int broken = 0;
-        for (int i = -distance; i <= distance; i++) {
-            broken += column(level, i, -distance, distance, tuning);
-            broken += column(level, i, distance, distance, tuning);
+        final int side = 2 * distance + 1;
+        if (index < side) {
+            return column(level, index - distance, -distance, distance, tuning);
         }
-        for (int j = 1 - distance; j < distance; j++) {
-            broken += column(level, -distance, j, distance, tuning);
-            broken += column(level, distance, j, distance, tuning);
+        if (index < 2 * side) {
+            return column(level, index - side - distance, distance, distance, tuning);
         }
-        return broken;
+        final int edge = index - 2 * side;
+        return column(level, (edge & 1) == 0 ? -distance : distance,
+                1 - distance + (edge >> 1), distance, tuning);
     }
 
     /**
@@ -289,8 +322,11 @@ public final class Collapse {
             final BlockPos fell = this.cursor.immutable();
             this.where.set(fell.getX() + 0.5, fell.getY() + 0.5, fell.getZ() + 0.5);
             this.subLevel.logicalPose().transformPosition(this.where, this.where);
-            BlockScatter.shatterContraptionBlock(level, fell, state, this.where,
-                    this.impactVelocity, profile.resistance());
+            if (!BlockScatter.shatterContraptionBlock(level, fell, state, this.where,
+                    this.impactVelocity, profile.resistance())) {
+                this.stalled = true;
+                break;
+            }
             broken++;
         }
         return broken;

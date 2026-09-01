@@ -181,6 +181,12 @@ public final class PendingBreaks {
         if (!(event.getLevel() instanceof final ServerLevel level)) {
             return;
         }
+        if (!ImpactConfig.enabled()) {
+            // Whatever was queued before the switch was thrown is dropped rather than carried, so turning
+            // the mod off in a live world stops it inside a tick instead of finishing what it had started.
+            LEVELS.remove(level);
+            return;
+        }
 
         final ImpactConfig.Tuning tuning = ImpactConfig.tuning();
         final boolean timed = ImpactStats.enabled();
@@ -188,6 +194,7 @@ public final class PendingBreaks {
             ImpactStats.frame(level);
         }
         CrackTracker.tick(level, tuning);
+        BuildDamage.sweep(level, tuning);
 
         final long started = System.nanoTime();
         final long deadline = started + (long) (ImpactConfig.MAX_TICK_MILLIS.get() * 1.0e6);
@@ -217,8 +224,10 @@ public final class PendingBreaks {
             if (!CrackTracker.hit(level, pending.pos, pending.overshoot, visible, tuning)) {
                 continue;
             }
-            shatter(level, pending.pos, pending.state, pending.impact, pending.impactVelocity,
-                    pending.resistance, pending.contraption);
+            if (!shatter(level, pending.pos, pending.state, pending.impact, pending.impactVelocity,
+                    pending.resistance, pending.contraption)) {
+                continue;
+            }
             CrackTracker.spall(level, pending.pos, visible, tuning);
             broken++;
             broken += ShockWave.spread(level, pending.pos, pending.impact, pending.impactVelocity,
@@ -242,8 +251,10 @@ public final class PendingBreaks {
             if (!CrackTracker.wear(level, worn.pos, worn.share, visible, tuning)) {
                 continue;
             }
-            shatter(level, worn.pos, worn.state, worn.impact, worn.impactVelocity,
-                    worn.resistance, worn.contraption);
+            if (!shatter(level, worn.pos, worn.state, worn.impact, worn.impactVelocity,
+                    worn.resistance, worn.contraption)) {
+                continue;
+            }
             CrackTracker.spall(level, worn.pos, visible, tuning);
             broken++;
         }
@@ -290,19 +301,24 @@ public final class PendingBreaks {
         LEVELS.put(level, carried);
     }
 
-    /** Routes to the world or plotgrid break path, which differ in where the debris entity is created. */
-    private static void shatter(final ServerLevel level,
-                                final BlockPos pos,
-                                final BlockState state,
-                                final Vector3d impact,
-                                final double impactVelocity,
-                                final double resistance,
-                                final boolean contraption) {
+    /**
+     * Routes to the world or plotgrid break path, which differ in where the debris entity is created and in
+     * whether the break can be refused - a build has a damage allowance and the world does not.
+     *
+     * @return whether the block was actually destroyed.
+     */
+    private static boolean shatter(final ServerLevel level,
+                                   final BlockPos pos,
+                                   final BlockState state,
+                                   final Vector3d impact,
+                                   final double impactVelocity,
+                                   final double resistance,
+                                   final boolean contraption) {
         if (contraption) {
-            BlockScatter.shatterContraptionBlock(level, pos, state, impact, impactVelocity, resistance);
-        } else {
-            BlockScatter.shatter(level, pos, state, impact, impactVelocity, resistance);
+            return BlockScatter.shatterContraptionBlock(level, pos, state, impact, impactVelocity, resistance);
         }
+        BlockScatter.shatter(level, pos, state, impact, impactVelocity, resistance);
+        return true;
     }
 
     /**

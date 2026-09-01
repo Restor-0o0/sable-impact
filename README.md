@@ -57,6 +57,17 @@ a restart; the caches that depend on it are dropped and rebuilt on the next tick
 Every option carries its full explanation as a comment in the generated file, including why the default is
 the default. What follows is the map — the reference tables at the end list every key.
 
+### Turning it off
+
+**`enabled = false`** is the master switch, and it is the whole of the mod: no contact is examined, no block
+is destroyed, no sweep runs, nothing is crushed or carved, and Sable builds its colliders exactly as it would
+without the jar installed.
+
+Because the config is a *server* config it lives inside the save, so this is per world. A world that has to
+behave as though the mod were not installed can be set to `enabled = false` once and left that way, while
+every other world on the same installation stays as it was. Nothing needs to be removed from `mods/`, and it
+is read live — flipping it takes effect on the next tick.
+
 ### Where to start
 
 Four settings between them cover most of what people want to change:
@@ -369,6 +380,14 @@ behaviour, a wave cut short by either ceiling is *not* thrown away: it is kept a
 sixty-four waves per level at a time. That is what lets a large crash spend its whole budget without spending
 it all in one frame.
 
+### If a build peels instead of breaking
+
+The hull coming off in a chain from one contact, several seconds after a landing, is one build losing more
+than a crash's worth of itself. `maxPerImpact` is the setting that bounds it and `maxPerTick` is the one that
+slows it down enough to watch. If it starts from a landing that should not have been a crash at all, raise
+`collapse.minSpeed`; if it spreads outwards through the hull rather than downwards, lower `shock.kineticScale`
+or `maxTicks`.
+
 ### If a wreck keeps shedding blocks long after it has stopped
 
 That tail is the wave, not the collapse. Waves are put down and picked up across ticks so the tick budget is
@@ -431,8 +450,14 @@ longer standing on anything, and gravity is more convincing than any impulse thi
 
 `collapseSpeed` is that pace, in blocks of front per tick. It is a speed rather than a budget on purpose:
 what a collapse costs has nothing to do with how fast the front travels, so it can be set by how it should
-look. At the default a build sixty blocks across finishes folding in about half a second. `collapseReach` is
-how far the failure spreads before the build holds itself up again.
+look. At the default the front has crossed its whole reach in two ticks. `collapseReach` is how far the
+failure spreads before the build holds itself up again, and it is deliberately short — a fold is a section
+of a ship going down, not the ship. Anything past it is the wave's business.
+
+`collapseMinSpeed` is how hard the build has to have arrived for any of this to happen. It is a separate
+number from the wave's `minSpeed` because the two want very different answers: a wave at walking pace chips
+whatever it touched, and a collapse at walking pace takes the floor out from under a ship that was being
+parked. This is the first setting to raise if a build seems to come apart under its own landing gear.
 
 `collapseBite` is the shape of it, and the shape is the whole point. A column directly under the contact
 loses this many courses, tapering to a single course at the rim — so the end that landed drops by three or
@@ -458,6 +483,10 @@ directions is nearest world down** at the moment of the hit, so the whole pass i
 is a straight line. A build lands more or less the way it was flying, and one that has rolled far enough for
 that answer to be wrong has larger problems than which way its columns run.
 
+However far the front reaches, it cannot take more of the build than the build's own allowance permits —
+see [Protection](#protection-how-much-of-a-build-one-crash-may-take), which is what stands between a fold and
+a hull peeling off in a chain.
+
 A landing and a ram are told apart by where the build was touched: the front is armed only by a contact
 **below the build's own centre of mass**, which is the cheapest thing that separates them. A ship that comes
 down on something is hit under its centre; one that scrapes a wall is hit level with it, and one that clips
@@ -466,6 +495,51 @@ still comes apart — that is the wave's job, and the wave has no such scruples 
 
 Set `collapse = false` for the pre-1.5 behaviour, where the only thing that ever destroys a build is the
 energy of the crash.
+
+## Protection: how much of a build one crash may take
+
+Everything above decides whether a given block should break. Nothing decided how much of one structure may
+break altogether, and the answer turned out to be all of it.
+
+Both a wave and a collapse walk outwards through whatever is touching, and on a hollow hull that is the skin.
+The bottom of a ship is a single course of material, so a pass that takes the lowest course of every column
+takes the whole bottom of the ship — and each place it lands afterwards starts the next one. What the player
+sees is not a crash but a corrosion: the hull peeling away in a chain from wherever it was touched, seconds
+after a landing that should only have dented it.
+
+So a build has a damage budget, and every path in this mod that can destroy one of its blocks draws on the
+same allowance. One crash is one crash, however many contacts, waves and fronts it sets off.
+
+```toml
+[protect]
+	protect = true
+	maxPerTick = 256
+	maxPerImpact = 3000
+	restTicks = 40
+```
+
+**`maxPerImpact`** is the size of a wreck: the most blocks one build may lose to one crash, however long the
+crash goes on. A ship that comes down hard loses a crater and the structure around it and then stops, instead
+of continuing until there is nothing left to walk through. Raise it for catastrophes, lower it for dents.
+
+**`maxPerTick`** is the pace of one. Lower it and the same build comes apart over more ticks without losing
+any less in the end, which is both easier to watch and much easier on the tick. Nothing is skipped: a wave
+stopped here picks up where it was, and a collapse front resumes at the column it stopped on rather than
+redoing the ring.
+
+**`restTicks`** is how long a build has to be left alone before the crash it was in counts as over and its
+allowance is handed back. Too short and one long grinding crash is scored as several, and the build is eaten
+anyway; too long and a ship that crashed, was repaired and flew into a cliff a minute later is still paying
+for the first one.
+
+There is a second reason this exists. Sable splits a sub-level when destroying blocks leaves it in
+disconnected pieces, and it queues that split rather than running it at once; annihilating what is left
+before the split runs takes the server down with `Sub-level assembly attempted inside plot of already removed
+sub-level`. Nothing on this side can make that safe outright, but a build that is never taken apart faster
+than a few hundred blocks a tick gives the split the time it needs, and a build Sable has already removed is
+noticed and left alone from that moment.
+
+`protect = false` is the pre-1.6 behaviour, where a single landing could take a whole hull apart.
 
 ## Debris: what flies, and where it lands
 
@@ -477,6 +551,7 @@ Every setting named here lives in the `[debris]` section of the config file.
 
 ```toml
 [debris]
+	mode = "FALL"
 	scatterChance = 0.25
 	contraptionScatterChance = 0.3
 	settle = true
@@ -492,6 +567,7 @@ Every setting named here lives in the `[debris]` section of the config file.
 	dropWhenLost = true
 	damagePerBlock = 0.0
 	damageMax = 40
+	maxSettlePerTick = 256
 ```
 
 ### What becomes of a broken block
@@ -502,6 +578,19 @@ A broken block has three possible ends, asked in this order: it is **thrown** as
 Only the first of those costs anything real. Thrown debris is a falling block entity — it ticks, it falls, it
 writes a block back, and every client in range is told about it — so it is rationed hard and only ever a few
 dozen blocks a tick. Settling is a block change and nothing else, which is why nearly everything can do it.
+
+**`mode`** — what a piece that is *not* simply gone actually does, and the setting that decides whether a
+crash reads as a structure failing or as a bomb going off under it.
+
+| `mode` | |
+|---|---|
+| `FALL` | It falls from where it stood, like sand. Nothing is thrown. A wreck comes down as a wreck, and a piece is on the ground in about the time it takes to fall the height it broke from. This is what a building does, and it is the default. |
+| `THROW` | It is thrown clear of the impact, which is how this mod behaved before 1.6. Right for a cannon shot and for a hull ploughing through a hillside; wrong for a hull folding, where several hundred pieces all leaving one point at once is an eruption. |
+| `SETTLE` | No falling block at all — the block is written straight back down onto the heap. One block change instead of an entity that has to fall, land, write a block anyway and be tracked by every client in range. Much the cheapest of the three, and much the dullest. |
+
+Under `FALL` the two chances below still decide *which* blocks get a falling block of their own rather than
+being heaped, and `maxScatterPerTick` still caps them. What changes is only that a piece is let go rather
+than launched.
 
 **`scatterChance`** — the fraction of broken **terrain** blocks that are thrown. `0` turns terrain debris off.
 
@@ -531,10 +620,22 @@ is what they are for.
 willing to fill, not a distance it is thrown. Low leaves wreckage perched where it broke; high has a hull
 broken over a ravine posting its blocks to the bottom of it.
 
-**`settleSpread`** — how wide the heap of a *contraption's* settled blocks is. A hull's blocks live out in the
-plotgrid and have no position of their own in the world — only the crash does — so unlike terrain they are
-spread over a disc around the impact. Too small and a ship comes down as a tower of itself; too large and the
-wreck is a thin film over the landscape rather than a pile.
+**`settleSpread`** — how wide the heap of a *contraption's* settled blocks is, as a jitter around where the
+block itself was. Too small and a ship comes down as a tower of itself; too large and the wreck is a thin
+film over the landscape rather than a pile.
+
+Before 1.6 that disc was drawn around the *contact point* rather than around each block, because a hull's
+blocks live out in the plotgrid and only the crash appeared to have a place in the world. It does not: the
+build's pose puts every one of its blocks exactly where the player is looking at it, and that is what is used
+now. What the old reading produced was the fountain and the waterfall — one contact breaks hundreds of blocks
+all over a hull, and every piece of that hull was created at the same spot, so an entire airship arrived as a
+puddle under one corner of itself.
+
+**`maxSettlePerTick`** — the cap on blocks all settling together may write back per tick, and the number that
+was missing. `settleShare` sends the great majority of a crash down this path and nothing bounded it: a wreck
+shedding four thousand blocks in a tick wrote four thousand blocks back, each with a neighbour update behind
+it, and the tick that did it took over a second. Blocks refused past the cap are gone rather than heaped,
+which costs a thinner pile and buys back the frame.
 
 **`maxScatterPerTick`** — the hard cap on thrown debris, and the number that keeps the two chances above from
 being a server killer. Blocks past the cap are not lost — they fall through to settling like any other block
@@ -598,7 +699,9 @@ In order of how much they save:
 
 | Change | Effect |
 |---|---|
-| `maxScatterPerTick` down | The one real limit. Everything else only changes what is competing for these slots. |
+| `mode = "SETTLE"` | The largest single saving here. No debris entity is created at all, so nothing ticks, falls or is tracked; a crash becomes block changes and nothing else. |
+| `maxSettlePerTick` down | The other one. This is where the bulk of a crash goes, and until 1.6 it was unbounded. |
+| `maxScatterPerTick` down | The hard limit on thrown pieces. Everything else only changes what is competing for these slots. |
 | `contraptionScatterChance` down | Fewer hull pieces flying. What they were going to cost is not saved by `settleShare` — a settled block is just a block change. |
 | `landingSearch = 0` | Drops the search entirely. Wreckage goes back to disappearing when it lands somewhere occupied. |
 | `dropWhenLost = false` | No items from failed landings. Worth it on a server where a crash site turns into a carpet of drops. |
@@ -610,6 +713,7 @@ In order of how much they save:
 
 | Option | Default | |
 |---|---|---|
+| `enabled` | `true` | The master switch. `false` and this mod does nothing at all, in this world only. |
 | `impactStrength` | `1.0` | Master multiplier over the whole force model. |
 | `minImpactSpeed` | `6.0` | Closing speed (m/s) below which nothing is ever broken. A noise floor: below it a contraption would dig its own grave as it settles. |
 | `fragileTrigger` | `4.0` | Speed (m/s) above which a fragile block is handed back to Sable to shatter on its own terms. |
@@ -683,13 +787,25 @@ Section `[collapse]`. See [Collapse](#collapse-what-a-build-does-once-it-has-lan
 | Option | Default | |
 |---|---|---|
 | `collapse` | `true` | Whether a landed build folds under its own weight at all. `false` is the pre-1.5 behaviour. |
-| `speed` | `6` | How far the failure front travels through the build per tick, in blocks. The pace of the whole thing. |
-| `reach` | `48` | How far from the contact the failure spreads, and what the taper is measured against. |
+| `speed` | `8` | How far the failure front travels through the build per tick, in blocks. The pace of the whole thing. |
+| `reach` | `16` | How far from the contact the failure spreads, and what the taper is measured against. A fold is a section of a ship going down, not the ship. |
 | `bite` | `3` | Courses of floor a column loses directly under the contact, tapering to one at `reach`. This is the fold; `1` removes it. |
 | `depth` | `24` | How tall a column is searched for that material. Must clear the tallest room in the build. The largest single cost here. |
 | `drop` | `4` | How far below the contact the search starts, because a hull touches down on whatever hangs lowest. |
 | `cooldown` | `10` | Ticks before the same build may be given another front. What makes the storeys separate events. |
 | `maxBlocksPerTick` | `2048` | Ceiling on blocks all collapses together may drop per level per tick. What this stops is not resumed later. |
+| `minSpeed` | `14.0` | Speed (m/s) below which a landing does not fold the build at all. Separate from `shock.minSpeed`, and the difference between a hard landing and a crash. |
+
+### Protection
+
+Section `[protect]`. See [Protection](#protection-how-much-of-a-build-one-crash-may-take).
+
+| Option | Default | |
+|---|---|---|
+| `protect` | `true` | Whether builds have a damage allowance at all. `false` is the pre-1.6 behaviour, where one landing could take a whole hull apart. |
+| `maxPerTick` | `256` | The most blocks one build may lose in one tick, to everything this mod does together. The pace of a wreck. |
+| `maxPerImpact` | `3000` | The most blocks one build may lose to one crash. The size of a wreck. |
+| `restTicks` | `40` | How long a build must be left alone before the crash counts as over and its allowance is handed back. |
 
 ### Crushing
 
@@ -752,6 +868,7 @@ Everything under `[debris]`. The chapter on it is [above](#debris-what-flies-and
 
 | Option | Default | |
 |---|---|---|
+| `mode` | `"FALL"` | What a broken block does: `FALL` lets it drop from where it stood, `THROW` flings it clear of the impact (pre-1.6 behaviour), `SETTLE` skips the entity entirely and writes it straight back down. |
 | `scatterChance` | `0.25` | Fraction of broken **terrain** blocks that fly off as debris rather than simply vanishing. |
 | `contraptionScatterChance` | `0.3` | The same for a **contraption's own** blocks. |
 | `settle` | `true` | Whether blocks that did not fly are put back down near where they broke instead of deleted. `false` is the pre-1.3 behaviour. |
@@ -767,6 +884,7 @@ Everything under `[debris]`. The chapter on it is [above](#debris-what-flies-and
 | `dropWhenLost` | `true` | What becomes of a piece that found nowhere at all: an item, or nothing. |
 | `damagePerBlock` | `0.0` | Fall damage debris deals to what it lands on, per block fallen, the way an anvil does. `0` is harmless. |
 | `damageMax` | `40` | Ceiling on that damage from any one piece. |
+| `maxSettlePerTick` | `256` | Cap on blocks all settling together may write back per level per tick. Where the bulk of a crash goes, and what bounds its cost. |
 
 ### Sweeps
 
@@ -832,7 +950,7 @@ without opening it:
 ./gradlew build -Pbuild_variant=fast
 ```
 
-→ `create_aeronautics_impact-1.5.0-fast.jar`, listed as *Create Aeronautics Impact (Fast)*. Same mod id and
+→ `create_aeronautics_impact-1.6.0-fast.jar`, listed as *Create Aeronautics Impact (Fast)*. Same mod id and
 same version, so only one variant can be installed at a time.
 
 For a release, build every variant in one run:

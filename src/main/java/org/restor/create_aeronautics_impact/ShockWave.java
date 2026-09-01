@@ -495,8 +495,13 @@ public final class ShockWave {
 
         final BlockPos broken = pos.immutable();
         if (this.contraption) {
-            BlockScatter.shatterContraptionBlock(this.level, broken, state, this.worldImpact,
-                    this.impactVelocity, profile.resistance());
+            if (!BlockScatter.shatterContraptionBlock(this.level, broken, state, this.worldImpact,
+                    this.impactVelocity, profile.resistance())) {
+                // The build has spent its allowance. Refunding the price and calling this solid is what
+                // stops the wave here rather than letting it walk on through a hull it may not touch.
+                this.budget += price;
+                return BLOCKED;
+            }
         } else {
             BlockScatter.shatter(this.level, broken, state, this.worldImpact,
                     this.impactVelocity, profile.resistance());

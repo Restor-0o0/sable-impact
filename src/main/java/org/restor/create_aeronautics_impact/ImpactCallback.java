@@ -96,7 +96,7 @@ public final class ImpactCallback implements BlockSubLevelCollisionCallback {
                                     @Nullable final BlockPos otherHitBlockPos,
                                     final Vector3d impactPosition,
                                     final double impactVelocity) {
-        if (!ImpactConfig.SPEC.isLoaded()) {
+        if (!ImpactConfig.enabled()) {
             return CollisionResult.NONE;
         }
 
@@ -332,7 +332,7 @@ public final class ImpactCallback implements BlockSubLevelCollisionCallback {
         if (callback != INSTANCE) {
             return true;
         }
-        if (!ImpactConfig.SPEC.isLoaded() || !ImpactConfig.cullInteriorVoxels()) {
+        if (!ImpactConfig.cullInteriorVoxels()) {
             return true;
         }
         final BlockProfile profile = BlockProfile.of(level, pos, state);

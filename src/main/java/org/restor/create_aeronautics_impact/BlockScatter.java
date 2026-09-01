@@ -1,5 +1,6 @@
 package org.restor.create_aeronautics_impact;
 
+import dev.ryanhcode.sable.sublevel.ServerSubLevel;
 import net.minecraft.core.BlockPos;
 import net.minecraft.core.Direction;
 import net.minecraft.server.level.ServerLevel;
@@ -31,7 +32,11 @@ public final class BlockScatter {
 
     private static long tick = Long.MIN_VALUE;
     private static int scattered;
+    private static int settled;
     private static int effects;
+
+    /** Scratch for a block's own world position. The break pass is the server thread and nothing else. */
+    private static final Vector3d WHERE = new Vector3d();
 
     private BlockScatter() {
     }
@@ -60,45 +65,70 @@ public final class BlockScatter {
             return;
         }
 
-        throwOut(level, FallingBlockEntity.fall(level, pos, state), away, speed, tuning);
+        throwOut(level, FallingBlockEntity.fall(level, pos, state), away, launch(speed, tuning), tuning);
+    }
+
+    /**
+     * How hard a piece is actually thrown, which is not the same as how hard it was hit.
+     *
+     * <p>The speed of the impact decides whether a block flies at all - it is what the scatter chance and the
+     * material are weighed against - but only {@code THROW} spends it on velocity. Under {@code FALL} the
+     * piece is let go where it stood and gravity has it, which is what a structure coming apart looks like;
+     * throwing every piece of a hull clear of the point that touched is what made a fold read as a bomb.
+     */
+    private static double launch(final double speed, final ImpactConfig.Tuning tuning) {
+        return tuning.debrisMode() == ImpactConfig.DebrisMode.THROW ? speed : 0.0;
     }
 
     /**
      * The same for a block belonging to a contraption, which lives in the plotgrid rather than in the world.
      *
-     * @param plotPos             where the block actually is, tens of thousands of blocks out in the
-     *                            plotgrid, which is what the entity has to be created from.
-     * @param worldImpactPosition where the player saw the crash, which is where it is then moved to.
+     * <p>Two things separate it from terrain. The build has a damage allowance and this is where the block is
+     * drawn from it, so a break refused here is a break that never happens - which is what the return value
+     * is for, since the caller has a budget of its own to keep honest.
+     *
+     * <p>And the block has no world position: it is tens of thousands of blocks out in the plotgrid, and
+     * every path that broke one used to hand the debris the contact point instead. Since one contact breaks
+     * hundreds of blocks all over a hull, every piece of that hull was created at the same spot - which is
+     * the fountain, and the waterfall, and the pile of a whole airship in a puddle under one corner of it.
+     * The build's pose puts each block back where the player is actually looking at it.
+     *
+     * @param plotPos             where the block is in the plotgrid, which is what the entity is created from.
+     * @param worldImpactPosition where the crash happened, used only if the build has gone in the meantime.
+     * @return whether the block was actually destroyed.
      */
-    public static void shatterContraptionBlock(final ServerLevel level,
-                                               final BlockPos plotPos,
-                                               final BlockState state,
-                                               final Vector3d worldImpactPosition,
-                                               final double impactVelocity,
-                                               final double resistance) {
+    public static boolean shatterContraptionBlock(final ServerLevel level,
+                                                  final BlockPos plotPos,
+                                                  final BlockState state,
+                                                  final Vector3d worldImpactPosition,
+                                                  final double impactVelocity,
+                                                  final double resistance) {
         final ImpactConfig.Tuning tuning = ImpactConfig.tuning();
-        final double speed = ImpactResolver.scatterSpeed(
-                impactVelocity, resistance, tuning.scatterVelocityScale());
-
-        if (!scatters(level, state, speed, tuning.contraptionScatterChance(), tuning)) {
-            // The block itself is out in the plotgrid, so there is no position of its own for it to fall
-            // from - only the crash has a place in the world. It joins the heap around that instead.
-            final BlockPos room = heaping(level, worldImpactPosition, state, tuning);
-            clear(level, plotPos, room == null && tuning.dropItems());
-            place(level, room, state, tuning);
-            return;
+        final ServerSubLevel build = BuildDamage.owner(level, plotPos);
+        if (!BuildDamage.take(level, build, tuning)) {
+            return false;
         }
 
-        // The block lives in the plotgrid tens of thousands of blocks away, so the debris is spawned
-        // there and then moved to where the player actually saw the crash.
+        final double speed = ImpactResolver.scatterSpeed(
+                impactVelocity, resistance, tuning.scatterVelocityScale());
+        final Vector3d where = BuildDamage.where(build, plotPos, worldImpactPosition, WHERE);
+
+        if (!scatters(level, state, speed, tuning.contraptionScatterChance(), tuning)) {
+            final BlockPos room = heaping(level, where, state, tuning);
+            clear(level, plotPos, room == null && tuning.dropItems());
+            place(level, room, state, tuning);
+            return true;
+        }
+
         final FallingBlockEntity debris = FallingBlockEntity.fall(level, plotPos, state);
-        debris.moveTo(worldImpactPosition.x, worldImpactPosition.y + 0.5, worldImpactPosition.z);
-        debris.setStartPos(BlockPos.containing(worldImpactPosition.x, worldImpactPosition.y, worldImpactPosition.z));
+        debris.moveTo(where.x, where.y, where.z);
+        debris.setStartPos(BlockPos.containing(where.x, where.y, where.z));
 
         throwOut(level, debris, new Vec3(
                 level.random.nextDouble() - 0.5,
                 level.random.nextDouble() * 0.5,
-                level.random.nextDouble() - 0.5).normalize(), speed, tuning);
+                level.random.nextDouble() - 0.5).normalize(), launch(speed, tuning), tuning);
+        return true;
     }
 
     /**
@@ -112,9 +142,11 @@ public final class BlockScatter {
                                  final Vec3 direction,
                                  final double speed,
                                  final ImpactConfig.Tuning tuning) {
-        debris.setDeltaMovement(direction.x * speed,
-                direction.y * speed + tuning.scatterUpwardKick(),
-                direction.z * speed);
+        if (speed > 0.0) {
+            debris.setDeltaMovement(direction.x * speed,
+                    direction.y * speed + tuning.scatterUpwardKick(),
+                    direction.z * speed);
+        }
         debris.dropItem = false;
         if (tuning.debrisDamagePerBlock() > 0.0) {
             debris.setHurtsEntities((float) tuning.debrisDamagePerBlock(), tuning.debrisDamageMax());
@@ -134,8 +166,7 @@ public final class BlockScatter {
                                                final Vec3 away,
                                                final BlockState state,
                                                final ImpactConfig.Tuning tuning) {
-        if (!tuning.settle() || tuning.settleShare() <= 0.0
-                || level.random.nextDouble() >= tuning.settleShare()) {
+        if (!heaps(level, tuning)) {
             return null;
         }
         final BlockPos pushed = pos.offset(
@@ -154,8 +185,7 @@ public final class BlockScatter {
                                               final Vector3d worldImpact,
                                               final BlockState state,
                                               final ImpactConfig.Tuning tuning) {
-        if (!tuning.settle() || tuning.settleShare() <= 0.0
-                || level.random.nextDouble() >= tuning.settleShare()) {
+        if (!heaps(level, tuning)) {
             return null;
         }
         final double spread = tuning.settleSpread();
@@ -313,16 +343,42 @@ public final class BlockScatter {
     }
 
     /**
+     * Whether this break gets to be heaped back onto the world, and books the ration slot if so.
+     *
+     * <p>Settling is one block change against a falling block's entity, so it was left unrationed and
+     * settleShare sends the great majority of a crash through it. That is thousands of writes in the tick a
+     * wreck comes down, each of them a neighbour update, and it is where the frame went - the mod's own
+     * measured work was a fraction of a millisecond in ticks that took a second and a half. The slot is
+     * booked before the ground is searched for rather than after, because the search is most of the cost.
+     */
+    private static boolean heaps(final ServerLevel level, final ImpactConfig.Tuning tuning) {
+        if (!tuning.settle() || tuning.settleShare() <= 0.0
+                || level.random.nextDouble() >= tuning.settleShare()) {
+            return false;
+        }
+        rollOver(level);
+        if (settled >= tuning.maxSettlePerTick()) {
+            return false;
+        }
+        settled++;
+        return true;
+    }
+
+    /**
      * Whether this break gets to be a falling block, and books the ration slot if so.
      *
      * <p>Block entities are excluded outright: a falling block entity carries no block entity data, so
-     * throwing a chest would quietly empty it.
+     * throwing a chest would quietly empty it. SETTLE excludes everything, which is the cheap setting: there
+     * is no entity to tick, land and write a block anyway, only the block change at the end of it.
      */
     private static boolean scatters(final ServerLevel level,
                                     final BlockState state,
                                     final double speed,
                                     final double chance,
                                     final ImpactConfig.Tuning tuning) {
+        if (tuning.debrisMode() == ImpactConfig.DebrisMode.SETTLE) {
+            return false;
+        }
         if (speed <= 0.05
                 || state.hasBlockEntity()
                 || !state.getFluidState().isEmpty()
@@ -344,6 +400,7 @@ public final class BlockScatter {
         if (now != tick) {
             tick = now;
             scattered = 0;
+            settled = 0;
             effects = 0;
         }
     }

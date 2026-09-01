@@ -314,7 +314,7 @@ public final class HullSweeper {
      */
     public static void onLevelTick(final LevelTickEvent.Post event) {
         final Level level = event.getLevel();
-        if (!(level instanceof final ServerLevel serverLevel) || !ImpactConfig.SPEC.isLoaded()) {
+        if (!(level instanceof final ServerLevel serverLevel) || !ImpactConfig.enabled()) {
             return;
         }
 

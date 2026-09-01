@@ -28,6 +28,16 @@ public final class ImpactConfig {
 
     private static final ModConfigSpec.Builder BUILDER = new ModConfigSpec.Builder();
 
+    public static final ModConfigSpec.BooleanValue ENABLED = BUILDER
+            .comment("The master switch. Off, this mod does nothing at all: no contact is examined, no block",
+                    "is destroyed, no sweep runs, nothing is crushed or carved, and Sable's colliders are",
+                    "built exactly as they would be without the jar installed.",
+                    "This is what makes it possible to keep the mod installed and have a world behave as",
+                    "though it were not. The config is per world - it lives in <world>/serverconfig - so one",
+                    "world can be off while another is on, and neither needs the jar removed.",
+                    "It is read live, so it takes effect on the tick after the file is saved.")
+            .define("enabled", true);
+
     public static final ModConfigSpec.DoubleValue IMPACT_STRENGTH = BUILDER
             .comment("Master dial on how hard everything in this mod hits. 1.0 is the tuning every other value",
                     "here was chosen against; 2 makes the whole system twice as destructive, 0.5 half.",
@@ -554,6 +564,30 @@ public final class ImpactConfig {
             .comment("Ceiling on that damage from any one piece of debris, however far it fell.")
             .defineInRange("damageMax", 40, 0, 1000);
 
+    public static final ModConfigSpec.EnumValue<DebrisMode> DEBRIS_MODE = BUILDER
+            .comment("What a broken block turns into on its way out.",
+                    "FALL   - it falls from where it stood, like sand. Nothing is thrown, so a wreck comes",
+                    "         down as a wreck instead of erupting, and a piece is on the ground in about the",
+                    "         time it takes to fall the height it broke from rather than flying for a second",
+                    "         first. This is what a building does.",
+                    "THROW  - it is thrown clear of the impact, which is the pre-1.6 behaviour. Right for a",
+                    "         cannon shot and for a hull ploughing through a hillside; wrong for a hull",
+                    "         folding, where it reads as an explosion under the floor.",
+                    "SETTLE - no falling block at all: the block is written straight back down onto the heap.",
+                    "         That is one block change instead of an entity that has to fall, land, write a",
+                    "         block anyway and be tracked by every client in range, so it is much the cheapest",
+                    "         of the three and much the dullest.")
+            .defineEnum("mode", DebrisMode.FALL);
+
+    public static final ModConfigSpec.IntValue MAX_SETTLE_PER_TICK = BUILDER
+            .comment("Ceiling on blocks all settling together may write back per level per tick.",
+                    "settleShare sends the great majority of a crash down this path and until now nothing",
+                    "bounded it: a wreck shedding four thousand blocks in a tick wrote four thousand blocks",
+                    "back, each with a full neighbour update behind it if blockUpdates is on, and the tick",
+                    "that did it took over a second. What is refused past this is gone rather than heaped,",
+                    "which costs a thinner pile and buys back the frame.")
+            .defineInRange("maxSettlePerTick", 256, 0, 32768);
+
     static {
         BUILDER.pop();
     }
@@ -797,14 +831,14 @@ public final class ImpactConfig {
                     "set by how it should look. At the default a build sixty blocks across is done folding in",
                     "about half a second. Lower it for a slow, groaning failure that spreads visibly outwards;",
                     "raise it and the whole footprint gives way at once.")
-            .defineInRange("speed", 6, 1, 64);
+            .defineInRange("speed", 8, 1, 64);
 
     public static final ModConfigSpec.IntValue COLLAPSE_REACH = BUILDER
             .comment("How far from the contact the failure spreads, in blocks, and so how much of a build one",
                     "landing can bring down. Past this the build is untouched and holds itself up.",
                     "It is also what the taper is measured against, so raising it does not only reach further,",
                     "it makes the fold shallower over that whole distance.")
-            .defineInRange("reach", 48, 1, 512);
+            .defineInRange("reach", 16, 1, 512);
 
     public static final ModConfigSpec.IntValue COLLAPSE_BITE = BUILDER
             .comment("How many courses of floor a column loses directly under the contact, tapering to one at",
@@ -843,6 +877,70 @@ public final class ImpactConfig {
                     "columns it skipped stay standing, which on a collapse is a hole in the wreckage rather",
                     "than a wave that never arrives.")
             .defineInRange("maxBlocksPerTick", 2048, 0, 262144);
+
+    public static final ModConfigSpec.DoubleValue COLLAPSE_MIN_SPEED = BUILDER
+            .comment("How fast a build has to be going for the landing to bring it down at all, in blocks per",
+                    "second.",
+                    "Its own gate rather than the wave's, because the two want very different answers: a wave",
+                    "at walking pace chips whatever it touched, and a collapse at walking pace takes the floor",
+                    "out from under a build that was being parked. This is the difference between a hard",
+                    "landing and a crash, and it is the first setting to raise if a build seems to come apart",
+                    "under its own landing gear.")
+            .defineInRange("minSpeed", 14.0, 0.0, 1000.0);
+
+    static {
+        BUILDER.pop();
+    }
+
+    static {
+        BUILDER.comment("How much of one build this mod may destroy, which is a different question from whether",
+                        "any given block should break.",
+                        "Nothing used to ask it, and the answer turned out to be all of it. A wave and a",
+                        "collapse both walk outwards through whatever is touching, so one contact on a hollow",
+                        "hull reaches the whole skin: the bottom of a ship is a single course of material, and",
+                        "a pass that takes the lowest course of every column takes the ship. What that looks",
+                        "like is not a crash but a corrosion - the hull peeling off in a chain from wherever it",
+                        "was touched, seconds after a landing that should only have dented it.",
+                        "So a build has a damage budget. Every path in the mod that can destroy one of its",
+                        "blocks draws on the same allowance, so a crash is one crash however many contacts,",
+                        "waves and fronts it sets off.",
+                        "It is also what stands between this mod and a hard crash in Sable. Sable splits a",
+                        "sub-level when destroying blocks leaves it in disconnected pieces, and it queues that",
+                        "split rather than running it at once; annihilating what is left before the split runs",
+                        "kills the server with 'Sub-level assembly attempted inside plot of already removed",
+                        "sub-level'. Taking a build apart over several ticks instead of in one gives the split",
+                        "the time it needs.")
+                .push("protect");
+    }
+
+    public static final ModConfigSpec.BooleanValue PROTECT = BUILDER
+            .comment("Whether builds have a damage budget at all. Off is the pre-1.6 behaviour, where a single",
+                    "landing could take a whole hull apart and occasionally took the server with it.")
+            .define("protect", true);
+
+    public static final ModConfigSpec.IntValue PROTECT_MAX_PER_TICK = BUILDER
+            .comment("The most blocks one build may lose in one tick, to everything this mod does put together.",
+                    "This is the pace of a wreck rather than its size: lower it and a build comes apart over",
+                    "more ticks without losing any less in the end, which is both easier to watch and easier",
+                    "on the tick. It is also the number that keeps Sable's queued split ahead of the damage.")
+            .defineInRange("maxPerTick", 256, 1, 65536);
+
+    public static final ModConfigSpec.IntValue PROTECT_MAX_PER_IMPACT = BUILDER
+            .comment("The most blocks one build may lose to one crash, however long that crash goes on.",
+                    "This is the size of a wreck. A build that lands hard loses a crater and the structure",
+                    "around it and then stops, instead of carrying on until there is nothing left to walk",
+                    "through - which is the whole difference between a ship that crashed and a ship that",
+                    "dissolved. Raise it for catastrophes, lower it for dents.")
+            .defineInRange("maxPerImpact", 3000, 1, 1000000);
+
+    public static final ModConfigSpec.IntValue PROTECT_REST_TICKS = BUILDER
+            .comment("How long a build has to be left alone before the crash it was in counts as over and its",
+                    "allowance is handed back, in ticks.",
+                    "Too short and one long grinding crash is scored as several and the build is eaten anyway;",
+                    "too long and a ship that crashed, was repaired and flew into a cliff a minute later is",
+                    "still paying for the first one. Two seconds is longer than any single impact keeps",
+                    "breaking things.")
+            .defineInRange("restTicks", 40, 1, 12000);
 
     static {
         BUILDER.pop();
@@ -1183,7 +1281,16 @@ public final class ImpactConfig {
      * remesh, which happens off the server thread and outside any tick.
      */
     public static boolean cullInteriorVoxels() {
-        return SPEC.isLoaded() && CULL_INTERIOR_VOXELS.get();
+        return enabled() && CULL_INTERIOR_VOXELS.get();
+    }
+
+    /**
+     * Whether this mod is doing anything at all in this world. Read straight off the spec for the same
+     * reason: it is asked from the remesh as well as from the tick, and it has to answer before the spec is
+     * loaded, which is the state a world is in while it is still starting up.
+     */
+    public static boolean enabled() {
+        return SPEC.isLoaded() && ENABLED.get();
     }
 
     /**
@@ -1194,6 +1301,13 @@ public final class ImpactConfig {
      * cannot be forgotten by a caller. A field read off this record is therefore not necessarily the number
      * written in the file.
      */
+    /** What a broken block turns into on its way out. See {@code [debris] mode}. */
+    public enum DebrisMode {
+        FALL,
+        THROW,
+        SETTLE
+    }
+
     public record Tuning(double minImpactSpeed,
                          double hardnessScale,
                          double explosionResistanceFactor,
@@ -1296,7 +1410,14 @@ public final class ImpactConfig {
                          int collapseDepth,
                          int collapseDrop,
                          int collapseCooldown,
-                         int collapseMaxPerTick) {
+                         int collapseMaxPerTick,
+                         DebrisMode debrisMode,
+                         int maxSettlePerTick,
+                         double collapseMinSpeed,
+                         boolean protectBuilds,
+                         int protectMaxPerTick,
+                         int protectMaxPerImpact,
+                         int protectRestTicks) {
 
         /**
          * Reads the whole spec once, applying {@code impactStrength} to the thresholds it eases on the way.
@@ -1412,7 +1533,14 @@ public final class ImpactConfig {
                     COLLAPSE_DEPTH.get(),
                     COLLAPSE_DROP.get(),
                     COLLAPSE_COOLDOWN.get(),
-                    COLLAPSE_MAX_PER_TICK.get());
+                    COLLAPSE_MAX_PER_TICK.get(),
+                    DEBRIS_MODE.get(),
+                    MAX_SETTLE_PER_TICK.get(),
+                    COLLAPSE_MIN_SPEED.get(),
+                    PROTECT.get(),
+                    PROTECT_MAX_PER_TICK.get(),
+                    PROTECT_MAX_PER_IMPACT.get(),
+                    PROTECT_REST_TICKS.get());
         }
 
         /** The lowest speed at which any block, however soft and however heavy the ram, could give way. */
