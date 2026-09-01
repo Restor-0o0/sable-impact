@@ -739,6 +739,21 @@ class ImpactResolverTest {
     }
 
     @Test
+    void whatABlockTakesOutOfAHullIsWhatItWasMadeOf() {
+        double stone = ImpactResolver.breakDrag(1.449, 12.0, SHIPPED_BREAK_DRAG_MASS);
+        double dirt = ImpactResolver.breakDrag(0.7, 12.0, SHIPPED_BREAK_DRAG_MASS);
+        assertTrue(stone > dirt * 2.0);
+        assertEquals(2.0 * stone, ImpactResolver.breakDrag(1.449, 24.0, SHIPPED_BREAK_DRAG_MASS));
+    }
+
+    @Test
+    void aBlockThatCostsNothingToBreakSlowsNothingDown() {
+        assertEquals(0.0, ImpactResolver.breakDrag(0.0, 60.0, SHIPPED_BREAK_DRAG_MASS));
+        assertEquals(0.0, ImpactResolver.breakDrag(1.449, 60.0, 0.0));
+        assertEquals(0.0, ImpactResolver.breakDrag(1.449, Double.NaN, SHIPPED_BREAK_DRAG_MASS));
+    }
+
+    @Test
     void aHullThatBarelyClippedSomethingStillOnlyPaysForWhatItHit() {
         // The cap is a ceiling and not a rate: light contact costs what it costs.
         double lost = ImpactResolver.speedLost(

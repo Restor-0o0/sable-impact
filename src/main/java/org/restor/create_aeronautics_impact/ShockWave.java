@@ -118,7 +118,7 @@ public final class ShockWave {
         final double scale = contraption ? tuning.hullShockScale() : tuning.terrainShockScale();
         final double energy = Math.max(
                 ImpactResolver.shockEnergy(overshoot, tuning.shockMinOvershoot(), scale),
-                draw(bodyId, contraption, kinetic));
+                draw(bodyId, contraption, kinetic, tuning.shockContactShare()));
         if (energy <= 0.0 || brokenThisTick >= tuning.shockMaxPerTick()) {
             return 0;
         }
@@ -173,15 +173,23 @@ public final class ShockWave {
      * <p>The hull and the ground each get a draw of their own, because they are two different things the same
      * crash does. Sharing one would make it a race - the ship that levelled the hill it landed on would come
      * away without a scratch, purely because the ground's contact happened to be reported first.
+     *
+     * <p>No single contact may take all of it either. A landing reports contacts all along the face that
+     * touched, and handing the whole crash to whichever of them was processed first buys one enormous sphere
+     * around one arbitrary block - a build that reads as having been shot rather than dropped. Capping the
+     * draw leaves the rest for the others, so the same total arrives as several waves spread over the face
+     * the build actually landed on.
      */
-    private static double draw(final int bodyId, final boolean contraption, final double kinetic) {
+    private static double draw(final int bodyId, final boolean contraption,
+                               final double kinetic, final double share) {
         if (kinetic <= 0.0) {
             return 0.0;
         }
         final int key = bodyId * 2 + (contraption ? 1 : 0);
         final double left = RESERVOIR.getOrDefault(key, kinetic);
-        RESERVOIR.put(key, 0.0);
-        return left;
+        final double taken = left * Math.clamp(share, 0.0, 1.0);
+        RESERVOIR.put(key, left - taken);
+        return taken;
     }
 
     /**

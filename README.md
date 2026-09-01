@@ -195,6 +195,7 @@ Every setting named here lives in the `[shock]` section of the config file.
 	hullScale = 8.0
 	terrainScale = 1.5
 	kineticScale = 1.0
+	perContactShare = 0.2
 	cost = 1.0
 	falloff = 0.98
 	maxBlocksPerImpact = 8192
@@ -236,6 +237,15 @@ The larger of the two answers is what the wave gets, so on any real crash `kinet
 and the other two only matter at the small end. **If structures are still too solid, raise `kineticScale`.**
 
 `impactStrength` multiplies all three, so the shock keeps step with everything else when that dial moves.
+
+`perContactShare` is how much of what is left any one contact may take. A landing does not touch the ground
+at a point - it reports contacts all along the face that came down, and the crash belongs to all of them. At
+`1.0` the first one to be handled takes the whole thing and levels a sphere around itself, which looks less
+like a build that fell over than like one that was shot; and because a sphere of ten thousand blocks cannot
+be broken inside one tick, what you actually watch is the wreck being eaten outward from a point over the
+following second. At the default `0.2` the same total arrives as several smaller waves spread along the face
+that hit, each finishing about when it started. Nothing is lost either way - what one contact leaves is
+there for the next.
 
 ### How far it travels
 
@@ -448,6 +458,7 @@ Section `[shock]`. See [Shock](#shock-when-an-impact-is-felt-past-the-block-it-b
 | `hullScale` | `8.0` | Contact-side energy a contraption's own blocks pass on per unit of overshoot past `minOvershoot`. Decides the crashes too small for kinetic energy to matter. |
 | `terrainScale` | `1.5` | The same for the world's own blocks. Kept low: a wave that keeps going through terrain is a tunnel. |
 | `kineticScale` | `1.0` | Energy per kilojoule the striking body is carrying. The main dial for how thoroughly a build comes apart. |
+| `perContactShare` | `0.2` | The largest share of a crash's remaining energy one contact may spend. Low spreads the damage along the face that hit; `1.0` gives it all to one point. |
 | `cost` | `1.0` | What one block's resistance costs the budget. Higher makes material matter more. |
 | `falloff` | `0.98` | The share of its purchasing power a wave keeps per block travelled. What bounds its reach. |
 | `maxBlocksPerImpact` | `8192` | Ceiling on blocks one shock may break. |
@@ -492,10 +503,10 @@ Section `[shock]`. See [Shock](#shock-when-an-impact-is-felt-past-the-block-it-b
 |---|---|---|
 | `boreMinSpeed` | `20.0` | Speed above which a hull shears the sides of the hole it is making rather than cutting a hole its own shape. |
 | `boreShare` | `0.5` | How much of the impact a block beside the hull's path feels, against one in it. `0` turns shearing off. |
-| `punchThrough` | `false` | Whether a hard enough impact drops the contact as well as the block. On, a hull yanked hard enough disappears into the ground. |
+| `punchThrough` | `true` | Whether a block that breaks gets out of the hull's way instead of stopping it. Off, the whole build is stopped dead by the first block it breaks. |
 | `punchThroughRatio` | `2.5` | With `punchThrough` on, how far an impact must overshoot before the contact is dropped too. |
-| `breakDragMass` | `2.0` | Mass (kg) a contraption must drag up to its own speed per block punched clean through. `0` is free digging. |
-| `breakDragMax` | `0.12` | The largest share of its speed a contraption may lose to breaking blocks in one tick. `1` restores dead stops. |
+| `breakDragMass` | `2.0` | Mass (kg) a contraption must drag up to its own speed per point of resistance of every block punched clean through. `0` is free digging. |
+| `breakDragMax` | `0.25` | The largest share of its speed a contraption may lose to breaking blocks in one tick. `1` restores dead stops. |
 
 ### Breaking and drops
 
@@ -587,7 +598,7 @@ without opening it:
 ./gradlew build -Pbuild_variant=fast
 ```
 
-→ `create_aeronautics_impact-1.2.1-fast.jar`, listed as *Create Aeronautics Impact (Fast)*. Same mod id and
+→ `create_aeronautics_impact-1.2.2-fast.jar`, listed as *Create Aeronautics Impact (Fast)*. Same mod id and
 same version, so only one variant can be installed at a time.
 
 For a release, build every variant in one run:

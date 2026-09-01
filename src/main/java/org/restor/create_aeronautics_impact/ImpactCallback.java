@@ -248,7 +248,8 @@ public final class ImpactCallback implements BlockSubLevelCollisionCallback {
                         other.resistance(), ImpactResolver.wear(other, hit) * wearShare, true);
             }
             if (punchThrough) {
-                final double momentum = tuning.breakDragMass() * Math.abs(impactVelocity);
+                final double momentum = ImpactResolver.breakDrag(
+                        hit.resistance(), impactVelocity, tuning.breakDragMass());
                 PendingBreaks.drag(level, otherSubLevel, momentum);
                 PendingBreaks.drag(level, hitSubLevel, momentum);
             }

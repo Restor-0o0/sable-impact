@@ -582,6 +582,18 @@ public final class ImpactConfig {
                     "the contact alone, which is the 1.2.0 behaviour.")
             .defineInRange("kineticScale", 1.0, 0.0, 1.0E6);
 
+    public static final ModConfigSpec.DoubleValue SHOCK_CONTACT_SHARE = BUILDER
+            .comment("The largest share of a crash's remaining energy any one contact may spend. A landing",
+                    "reports its contacts all along the face that touched, and this is what decides whether",
+                    "the damage looks like that or like one point. At 1 the first contact to be processed",
+                    "takes the whole crash and levels a sphere around itself, which reads as the build having",
+                    "been shot rather than dropped - and worse, one sphere of ten thousand blocks cannot be",
+                    "broken inside one tick, so it crawls outwards over the next second like something eating",
+                    "the wreck from the middle. Lower spreads the same total over the whole contact face as",
+                    "several smaller waves that each finish in the tick they started.",
+                    "Nothing is lost either way: what one contact does not take is left for the next.")
+            .defineInRange("perContactShare", 0.2, 0.01, 1.0);
+
     public static final ModConfigSpec.DoubleValue SHOCK_COST = BUILDER
             .comment("What one block's resistance costs the wave passing through it. Higher makes material",
                     "matter more: an obsidian bulkhead stops a wave that ran the length of a wooden deck.",
@@ -623,11 +635,18 @@ public final class ImpactConfig {
 
     public static final ModConfigSpec.BooleanValue PUNCH_THROUGH = BUILDER
             .comment("Whether a hard enough impact drops the contact as well as the block, letting the hull",
-                    "carry on into the next layer untouched. It is what makes a ram plough, and it is also what",
-                    "makes a contraption yanked hard enough disappear into the ground: each layer it reaches is",
-                    "still fast enough to be waved past, so nothing ever stops it until it runs out of speed",
-                    "somewhere inside the terrain. Off, terrain always pushes back and a hull hits it instead.")
-            .define("punchThrough", false);
+                    "carry on into the next layer instead of being stopped by what it just destroyed.",
+                    "This is what decides whether a crash looks like a crash. Off, the solver stops the whole",
+                    "body dead against the first block it breaks - a hundred-block hull comes down on one",
+                    "corner, that corner reports the impact, and the other ten thousand blocks never touch",
+                    "anything at all. On, the block gives way, takes its own share of the hull's momentum with",
+                    "it (see breakDragMass) and the rest of the build carries on into the ground, which is how",
+                    "the whole of it gets to meet the whole of the ground.",
+                    "The cost is a hull yanked hard enough burying itself: each layer is met at nearly the",
+                    "speed of the last, so nothing stops it until it runs out. breakDragMass and breakDragMax",
+                    "are what stand against that, and punchThroughRatio is what keeps ordinary landings out",
+                    "of it entirely.")
+            .define("punchThrough", true);
 
     public static final ModConfigSpec.DoubleValue PUNCH_THROUGH_RATIO = BUILDER
             .comment("With punchThrough on, how far an impact has to overshoot a block's break speed before the",
@@ -636,10 +655,13 @@ public final class ImpactConfig {
             .defineInRange("punchThroughRatio", 2.5, 1.0, 100.0);
 
     public static final ModConfigSpec.DoubleValue BREAK_DRAG_MASS = BUILDER
-            .comment("Mass (kg) a contraption has to drag up to its own speed for every block it punches",
-                    "clean through. This is the only thing slowing a ram that is fast enough to be waved past",
-                    "the terrain: without it gravity keeps adding speed, every next layer is easier than the",
-                    "last, and the hull tunnels to bedrock. Higher = terrain grabs harder, 0 = free digging.")
+            .comment("Mass (kg) a contraption has to drag up to its own speed for every point of resistance of",
+                    "every block it punches clean through. This is how much momentum a block gets to absorb on",
+                    "its way out, and it is priced by material: crossing a mountain costs several times what",
+                    "crossing a wheat field does, which a flat price could not say.",
+                    "It is also the only thing slowing a ram that is fast enough to be waved past the terrain.",
+                    "Without it gravity keeps adding speed, every next layer is easier than the last, and the",
+                    "hull tunnels to bedrock. Higher = terrain grabs harder, 0 = free digging.")
             .defineInRange("breakDragMass", 2.0, 0.0, 1000.0);
 
     public static final ModConfigSpec.DoubleValue BREAK_DRAG_MAX = BUILDER
@@ -654,7 +676,7 @@ public final class ImpactConfig {
                     "goes on paying on the following ticks, and comes to rest just the same, over about a second",
                     "rather than between two frames.",
                     "1 removes the ceiling and restores the dead stops. Low values make terrain feel like water.")
-            .defineInRange("breakDragMax", 0.12, 0.01, 1.0);
+            .defineInRange("breakDragMax", 0.25, 0.01, 1.0);
 
     public static final ModConfigSpec.BooleanValue CULL_INTERIOR_VOXELS = BUILDER
             .comment("Let Sable merge fully buried blocks back into their neighbours.",
@@ -988,6 +1010,7 @@ public final class ImpactConfig {
                          double hullShockScale,
                          double terrainShockScale,
                          double shockKineticScale,
+                         double shockContactShare,
                          double shockCost,
                          double shockFalloff,
                          int shockMaxPerImpact,
@@ -1078,6 +1101,7 @@ public final class ImpactConfig {
                     HULL_SHOCK_SCALE.get() * Math.max(1.0, strength),
                     TERRAIN_SHOCK_SCALE.get() * Math.max(1.0, strength),
                     SHOCK_KINETIC_SCALE.get() * Math.max(1.0, strength),
+                    SHOCK_CONTACT_SHARE.get(),
                     SHOCK_COST.get(),
                     SHOCK_FALLOFF.get(),
                     SHOCK_MAX_PER_IMPACT.get(),

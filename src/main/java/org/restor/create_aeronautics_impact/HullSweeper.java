@@ -424,15 +424,25 @@ public final class HullSweeper {
                 tracked.moved(now, centreX, centreY, centreZ);
             }
 
-            if (now < tracked.quietUntil) {
-                ImpactStats.addHull(true);
-                continue;
-            }
-            final int quiet = quietTicks(serverLevel, bounds, velocity);
-            if (quiet > 0) {
-                tracked.quietUntil = now + quiet;
-                ImpactStats.addHull(true);
-                continue;
+            // A hull that is getting nowhere is never quiet, whatever the heightmap says about the ground
+            // under it. The window below is an optimisation for something crossing open air and its whole
+            // warrant is that the hull will have moved on before it expires - one that has not moved in half
+            // a second will not have. It is either parked, which costs nothing to look at, or it is caught on
+            // something the heightmap does not record: a canopy, a fence, a slab, anything that does not
+            // block motion and so never sets a column's height. That is exactly the hull that needs digging
+            // out, and skipping it renewed the skip every time, so it hung there for good.
+            final boolean gettingNowhere = now - tracked.lastMoved >= STILL_TICKS;
+            if (!gettingNowhere) {
+                if (now < tracked.quietUntil) {
+                    ImpactStats.addHull(true);
+                    continue;
+                }
+                final int quiet = quietTicks(serverLevel, bounds, velocity);
+                if (quiet > 0) {
+                    tracked.quietUntil = now + quiet;
+                    ImpactStats.addHull(true);
+                    continue;
+                }
             }
             ImpactStats.addHull(false);
 
@@ -740,7 +750,8 @@ public final class HullSweeper {
                             face.resistance(), overshoot(speed, face), true, bodyId, kinetic)) {
                         PendingBreaks.wear(level, pos, state, origin, speed, side.resistance(),
                                 ImpactResolver.wear(side, face) * wearShare, false);
-                        momentum += tuning.breakDragMass() * speed;
+                        momentum += ImpactResolver.breakDrag(
+                                face.resistance(), speed, tuning.breakDragMass());
                         broken++;
                         budget.spendBreak();
                     }
@@ -752,14 +763,16 @@ public final class HullSweeper {
                     PendingBreaks.wear(level, plot, hullState, origin, speed, face.resistance(),
                             ImpactResolver.wear(face, side) * wearShare, true);
                 }
-                momentum += tuning.breakDragMass() * speed;
+                momentum += ImpactResolver.breakDrag(
+                        side.resistance(), speed, tuning.breakDragMass());
                 broken++;
                 budget.spendBreak();
 
                 if (boreSpeed > 0.0) {
                     final int sheared = shearWalls(level, pos, axis, wall, origin, velocity, speed,
                             boreSpeed, massFactor, budget);
-                    momentum += tuning.breakDragMass() * boreSpeed * sheared;
+                    momentum += ImpactResolver.breakDrag(
+                            side.resistance(), boreSpeed, tuning.breakDragMass()) * sheared;
                     broken += sheared;
                 }
             }

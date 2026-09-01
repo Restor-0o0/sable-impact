@@ -64,6 +64,27 @@ public final class ImpactResolver {
      * the ticks that follow: nothing is refunded, and a hull that ran into more than it could pay for still
      * comes to rest, over about a second instead of between two frames.
      */
+    /**
+     * The momentum one block takes out of the body that punched through it.
+     *
+     * <p>Scaled by what was broken rather than flat. A block is not a fixed lump of mass in the way: it is
+     * something that has to be broken first, and what it costs to break is what it is made of. A flat price
+     * had a hull cross a mountain and a hull cross a wheat field at the same rate, which is the one thing
+     * everyone watching can see is wrong.
+     *
+     * <p>This is also what makes punching through safe to leave on. A contact this mod drops is one the
+     * solver never resolves, so the terrain would otherwise take nothing at all out of the hull and every
+     * next layer would be met at the speed of the last - a hull that tunnels to bedrock rather than one that
+     * digs in and stops.
+     */
+    public static double breakDrag(final double resistance, final double speed, final double dragMass) {
+        if (dragMass <= 0.0 || resistance <= 0.0) {
+            return 0.0;
+        }
+        final double v = Math.abs(speed);
+        return Double.isNaN(v) || Double.isInfinite(v) ? 0.0 : dragMass * resistance * v;
+    }
+
     public static double speedLost(final double momentum,
                                    final double hullMass,
                                    final double speed,
