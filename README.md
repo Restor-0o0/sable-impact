@@ -248,6 +248,10 @@ Every setting named here lives in the `[shock]` section of the config file.
 	fractureWander = 2
 	fractureGap = 6
 	fractureCost = 0.05
+	fractureAim = true
+	fractureScan = 48
+	fractureMinRun = 3
+	fractureFloor = 128
 	cost = 1.0
 	falloff = 0.98
 	maxBlocksPerImpact = 8192
@@ -342,6 +346,43 @@ than a diagram: each cut starts where the build was actually touched, so two cut
 corners of the face that landed rather than two planes crossing at whichever contact was reported first. Each
 takes a different axis as well, so two cuts really are two pieces rather than the same cut made twice.
 
+The count is kept against **the build being cut**, not the one that arrived. A crash has two sides and both of
+them come apart; keeping it against the striker meant a ship landing on a plate spent both of the plate's cuts
+on its own hull, and the plate was left whole with a hole in it.
+
+#### Which way the cut is made
+
+A crack is a plane, and a plane is named by the axis it is cut across. Until 1.9.1 that axis was dealt out in
+turn - X, then Y, then Z - so that two cracks would cross rather than repeat. On a solid lump that is fine. On
+anything anybody builds it is wrong two times in three, because **the axis a thing is thin along is the one
+axis it cannot be parted across**.
+
+A mast cut across its length falls in two. A mast cut *along* its length is two half-masts still joined at both
+ends, which is not a break at all - and the ship that flew into it is stopped dead by a mast that is still
+there, wedges on it and tips over. A one-block plate cut across its width parts; cut across its thickness the
+plane *is* the plate, and what the crack does is chew a square hole out of the middle of it and stop when the
+energy runs out, leaving the plate in one piece.
+
+So with `fractureAim` on the axis is measured instead of dealt. The material is followed out from the break in
+all three directions - `fractureScan` blocks at most, crossing the same gaps a crack itself may cross - and
+the cut is made across whichever it runs furthest along. That is the mast's length, the plate's width, and on
+a hull the cut amidships that leaves the stern behind. A second crack takes the next axis down, so a plate cut
+across its length is then cut across its width and comes apart in four.
+
+`fractureMinRun` is what is never taken: an axis the build barely extends along at all. Below it the plane lies
+in the face of the thing rather than through it, which is the bite out of the plate, and no number of those
+ever separates anything. Cracks after the first wrap around within what is left eligible rather than falling
+back onto the thin axis the first two were avoiding.
+
+`fractureFloor` is how many blocks a crack may take before the price of them is looked at at all. `fractureCost`
+already makes cuts cheap, but cheap is not the same as certain, and a cut that stops halfway has split nothing:
+what it leaves is a notch, and the build it is in is still one build with a groove in it. This is the guarantee
+that a cut worth starting is worth finishing. It is not a licence to destroy - the build's damage allowance
+under `[protect]`, the per-tick ceiling and the per-impact ceiling all stop a crack exactly as they did.
+
+Set `fractureAim = false` and `fractureFloor = 0` for the pre-1.9.1 behaviour: cracks dealt by rotation and
+only ever as long as the crash could pay for.
+
 `fractureGap` is how many blocks of nothing a crack may cross before it gives up, and on a real build it is
 the setting that decides whether cracks work at all. A wave is carried by what is solid and has no business
 crossing a room. A crack is a surface, and a ship is a shell around air: at `0` a seam entering the hull dies
@@ -359,9 +400,17 @@ pulverising does, which in practice turns it off.
 
 `fractureWander` is how far a crack may drift off the flat plane it started on. At `0` a build is cut as
 though by a saw, which is legible and looks like nothing that has ever broken; at the default the seam
-wanders a block at a time and comes out ragged. It costs nothing either way - a crack removes exactly one
-block per column of its plane however much it wanders, which is also what guarantees the cut is a cut and not
-a decoration.
+wanders a block at a time and comes out ragged.
+
+A wandering seam takes the block on its plane as well as the one it wandered onto, and it has to. Sable decides
+what is still one build by neighbours *including the diagonals*, so two columns whose missing block sits at
+depths one apart are still joined through the seam - the block left in the first touches the block left in the
+second across the corner. Every column of a drifted seam is like that, which is how a build could be cut end to
+end and stay in one piece with a groove in it. Taking the plane block too means that whatever the seam does,
+the whole of the plane it started on is gone wherever the crack reached, and nothing can be traced across a
+plane that is not there. The drift is left doing what it was wanted for: widening the cut unevenly, so the
+edges of the two pieces are ragged rather than sawn. It costs the blocks it wanders over, and `0` is the
+cheapest.
 
 `fractureFalloff` is the crack's own version of `falloff` below, and it is set much closer to `1` because the
 two want opposite things: a wave has to be stopped from reaching across the map, and a crack is no use at all
@@ -977,9 +1026,13 @@ Section `[shock]`. See [Shock](#shock-when-an-impact-is-felt-past-the-block-it-b
 | `fractureShare` | `0.6` | The share of a crash spent cutting the build into pieces rather than eating a hole in it. |
 | `fractureCount` | `2` | How many cracks one crash may open, one per contact, up to this many per build per tick. |
 | `fractureFalloff` | `0.995` | What a crack keeps of its purchasing power per block travelled. Near `1`: a crack is no use unless it crosses the build. |
-| `fractureWander` | `2` | How far a crack may drift off its plane, in blocks. `0` cuts like a saw. |
+| `fractureWander` | `2` | How far a crack may drift off its plane, in blocks. The plane block is taken as well as the wandered one, so the cut widens rather than moves. `0` cuts like a saw and is the cheapest. |
 | `fractureGap` | `6` | How many blocks of nothing a crack may cross. `0` stops it at the first cavity, which on a hull means it stops immediately. |
 | `fractureCost` | `0.05` | What a crack pays for a block, against what a wave pays for the same one. Lower reaches further; `1.0` turns cracking off in practice. |
+| `fractureAim` | `true` | Whether the cut is made across the way the build actually runs, rather than across whichever axis came up next. `false` is the pre-1.9.1 rotation, which cuts a mast lengthwise and bites a hole in a plate. |
+| `fractureScan` | `48` | How far the crack looks along each axis to work out which way the build runs, in blocks. Three lines of reads per cut. |
+| `fractureMinRun` | `3` | How far the build has to run along an axis before a cut across it is a cut rather than a bite. `1` excludes nothing and brings the bite back. |
+| `fractureFloor` | `128` | Blocks a crack may take before its purse is consulted, so a cut worth starting is worth finishing. `0` is the pre-1.9.1 behaviour. Everything under `[protect]` still applies. |
 | `cost` | `1.0` | What one block's resistance costs the budget. Higher makes material matter more. |
 | `falloff` | `0.98` | The share of its purchasing power a wave keeps per block travelled. What bounds its reach. |
 | `maxBlocksPerImpact` | `8192` | Ceiling on blocks one shock may break. |

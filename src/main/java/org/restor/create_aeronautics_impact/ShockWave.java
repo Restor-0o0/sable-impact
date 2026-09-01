@@ -11,6 +11,7 @@ import it.unimi.dsi.fastutil.ints.IntArrayFIFOQueue;
 import it.unimi.dsi.fastutil.longs.LongArrayFIFOQueue;
 import it.unimi.dsi.fastutil.longs.LongOpenHashSet;
 import it.unimi.dsi.fastutil.objects.ObjectIterator;
+import dev.ryanhcode.sable.sublevel.ServerSubLevel;
 import net.minecraft.core.BlockPos;
 import net.minecraft.core.Direction;
 import net.minecraft.server.level.ServerLevel;
@@ -59,6 +60,12 @@ public final class ShockWave {
     private static final int MAX_RUNNING = 64;
 
     private static final Map<ServerLevel, List<ShockWave>> RUNNING = new WeakHashMap<>();
+
+    // Reading the material out from a break to decide which way to cut it happens once per crack, on the
+    // server tick, before any wave of its own exists to own a cache. Dropped every tick with the rest of the
+    // per-tick state, since a chunk held across ticks is a chunk that may have been unloaded.
+    private static final ChunkCache MEASURE = new ChunkCache();
+    private static final BlockPos.MutableBlockPos MEASURING = new BlockPos.MutableBlockPos();
 
     private static long tick = Long.MIN_VALUE;
     private static int brokenThisTick;
@@ -128,6 +135,9 @@ public final class ShockWave {
 
     private double budget;
     private int broken;
+
+    /** Blocks this walk may take before its purse is allowed to stop it. Cracks only; see fractureFloor. */
+    private int free;
 
     /** How much of the shock left the last block {@link #strike} looked at, whether or not it broke it. */
     private double passed;
@@ -240,8 +250,9 @@ public final class ShockWave {
      *
      * <p>But one cut per contact rather than all of them at the first, so that the cuts start where the build
      * was actually touched - two different corners of the face that landed, rather than two seams crossing at
-     * the one contact that happened to be reported first. Each takes a different axis, so two cuts are two
-     * pieces rather than the same cut made twice.
+     * the one contact that happened to be reported first. Each takes the next axis down out of {@link
+     * CrackPlane}, so two cuts cross rather than repeat, and neither of them is ever made across the axis the
+     * build is thin along.
      *
      * <p>Contraptions only. A crack through terrain is a canyon, and nobody asked for a canyon.
      */
@@ -258,7 +269,10 @@ public final class ShockWave {
         if (!contraption || !tuning.fracture() || count <= 0 || tuning.fractureShare() <= 0.0) {
             return 0;
         }
-        final int key = reservoirKey(bodyId, true);
+        // Counted against the build being cut rather than against the one that arrived. A crash has two
+        // sides and both of them come apart, so keying the ration to the striker meant a ship landing on a
+        // plate spent both of the plate's cuts on itself and the plate was left whole with a hole in it.
+        final int key = reservoirKey(cutBodyId(level, origin, bodyId), true);
         final int already = FRACTURES.get(key);
         if (already >= count) {
             return 0;
@@ -270,9 +284,77 @@ public final class ShockWave {
         }
         FRACTURES.put(key, already + 1);
 
-        final Direction.Axis[] axes = Direction.Axis.values();
         return start(level, origin, worldImpact, impactVelocity, true,
-                axes[Math.floorMod(bodyId + already, axes.length)], total, 0.0, tuning, deadline);
+                aim(level, origin, bodyId, already, tuning), total, 0.0, tuning, deadline);
+    }
+
+    /**
+     * Which axis this cut is made across.
+     *
+     * <p>Measured out of the build rather than dealt in turn, because the axis a thing is thin along is the
+     * one axis it cannot be parted across - see {@link CrackPlane}, which does the choosing. All this does is
+     * follow the material out from the break in each of the three directions and hand over how far it got.
+     *
+     * <p>The same gap a crack is allowed to cross is allowed here, so a hull measures as the length of its
+     * hull rather than as the thickness of the one plate the break happened to be in.
+     */
+    private static Direction.Axis aim(final ServerLevel level,
+                                      final BlockPos origin,
+                                      final int bodyId,
+                                      final int already,
+                                      final ImpactConfig.Tuning tuning) {
+        final Direction.Axis[] axes = Direction.Axis.values();
+        if (!tuning.fractureAim()) {
+            return axes[Math.floorMod(bodyId + already, axes.length)];
+        }
+
+        final int scan = tuning.fractureScan();
+        final int gap = tuning.fractureGap();
+        return axes[CrackPlane.normal(
+                reach(level, origin, Direction.Axis.X, scan, gap),
+                reach(level, origin, Direction.Axis.Y, scan, gap),
+                reach(level, origin, Direction.Axis.Z, scan, gap),
+                tuning.fractureMinRun(), already)];
+    }
+
+    /** How many blocks of the build lie on the line through {@code origin} along {@code axis}, both ways. */
+    private static int reach(final ServerLevel level, final BlockPos origin,
+                             final Direction.Axis axis, final int scan, final int gap) {
+        return 1 + along(level, origin, axis, 1, scan, gap)
+                + along(level, origin, axis, -1, scan, gap);
+    }
+
+    /** One direction of that line, ending at the edge of the build, of the scan, or of what is loaded. */
+    private static int along(final ServerLevel level, final BlockPos origin, final Direction.Axis axis,
+                             final int step, final int scan, final int gap) {
+        int solid = 0;
+        int empty = 0;
+        for (int offset = 1; offset <= scan; offset++) {
+            final int moved = step * offset;
+            MEASURING.set(
+                    origin.getX() + (axis == Direction.Axis.X ? moved : 0),
+                    origin.getY() + (axis == Direction.Axis.Y ? moved : 0),
+                    origin.getZ() + (axis == Direction.Axis.Z ? moved : 0));
+            final BlockState state = MEASURE.stateIfLoaded(level, MEASURING);
+            if (state == null) {
+                break;
+            }
+            if (state.isAir()) {
+                if (++empty > gap) {
+                    break;
+                }
+                continue;
+            }
+            empty = 0;
+            solid++;
+        }
+        return solid;
+    }
+
+    /** The build the cut is being made in, which is not always the one that did the hitting. */
+    private static int cutBodyId(final ServerLevel level, final BlockPos origin, final int bodyId) {
+        final ServerSubLevel owner = BuildDamage.owner(level, origin);
+        return owner == null ? bodyId : owner.getRuntimeId();
     }
 
     /** Sets one walk going from the block that broke, and parks it if it cannot finish inside the tick. */
@@ -292,6 +374,7 @@ public final class ShockWave {
         final ShockWave wave = new ShockWave(level, origin, worldImpact, impactVelocity,
                 contraption, crack, tuning);
         wave.budget = energy;
+        wave.free = crack == null ? 0 : Math.max(0, tuning.fractureFloor());
         wave.seen.add(wave.key(origin));
         wave.frontier.enqueue(origin.asLong());
         wave.distances.enqueue(1.0);
@@ -410,7 +493,7 @@ public final class ShockWave {
         while (!this.frontier.isEmpty()) {
             // Under stress nothing is bought, so an exhausted purse is not what ends the walk - the
             // intensity floor and the scan ceiling are, and a wave that is still strong is still going.
-            if (this.broken >= perImpact || (!this.stress && this.budget <= 0.0)) {
+            if (this.broken >= perImpact || spent()) {
                 return true;
             }
             if (this.stress && this.scanned >= tuning.stressMaxScan()) {
@@ -476,8 +559,9 @@ public final class ShockWave {
                     this.intensities.enqueue(this.stress ? this.passed : arriving);
                     this.gaps.enqueue(0);
                 }
+                seal(distance, arriving, tuning);
 
-                if (this.broken >= perImpact || (!this.stress && this.budget <= 0.0)) {
+                if (this.broken >= perImpact || spent()) {
                     return true;
                 }
                 if (brokenThisTick >= tuning.shockMaxPerTick()) {
@@ -490,11 +574,51 @@ public final class ShockWave {
     }
 
     /**
+     * Whether the purse is empty, which for a crack is not the same as being finished.
+     *
+     * <p>A cut that stops halfway has split nothing - it is a notch, and the build it is in is still one
+     * build. So a crack is given a number of blocks it may take before the price of them is looked at at
+     * all, and only past that does running out of energy end it. A wave has no such allowance: a wave that
+     * runs out of energy has done exactly what it was meant to do.
+     */
+    private boolean spent() {
+        return !this.stress && this.budget <= 0.0 && this.free <= 0;
+    }
+
+    /**
+     * Takes the block on the plane as well as the one the seam wandered onto.
+     *
+     * <p>Without this a wandering seam is not a cut at all, and the reason is Sable's rather than ours. It
+     * decides what is still one build by neighbours including the diagonals, so two columns whose missing
+     * block sits at depths one apart are still joined <em>through</em> the seam - the block left in the first
+     * column touches the block left in the second across the corner. Every column of a drifted seam is like
+     * that, which is how a build could be cut end to end and stay in one piece with a groove in it.
+     *
+     * <p>Taking the plane block too puts back the guarantee the drift removed: whatever the seam does, the
+     * whole of the plane it started on is gone wherever the crack reached, and nothing can be traced across a
+     * plane that is not there. What the drift is left doing is what it was wanted for - widening the cut
+     * unevenly, so the edges of the two pieces are ragged rather than sawn.
+     */
+    private void seal(final double distance, final double intensity, final ImpactConfig.Tuning tuning) {
+        if (this.crack == null || this.cursor.get(this.crack) == this.plane) {
+            return;
+        }
+        switch (this.crack) {
+            case X -> this.cursor.setX(this.plane);
+            case Y -> this.cursor.setY(this.plane);
+            case Z -> this.cursor.setZ(this.plane);
+        }
+        if (strike(this.cursor, distance, intensity, tuning) == BROKEN) {
+            this.broken++;
+            brokenThisTick++;
+        }
+    }
+
+    /**
      * Lets a crack step a block off its own plane, so what it leaves is a seam rather than a saw cut.
      *
-     * <p>One block per column of the plane either way, whatever the drift, which is what keeps the cut a cut:
-     * every column the crack reaches is missing exactly one block, so nothing can be traced through it from
-     * one side to the other however the seam wanders.
+     * <p>The block on the plane is taken as well - see {@link #seal} - so the drift widens the cut rather
+     * than moving it, and a column the seam has wandered across loses two blocks instead of one.
      */
     private void drift(final int wander) {
         if (this.crack == null || wander <= 0) {
@@ -566,7 +690,7 @@ public final class ShockWave {
         final double price = ImpactResolver.shockCost(
                 profile.resistance() * this.toughness, tuning.shockCost(), distance)
                 * (this.crack == null ? 1.0 : tuning.fractureCost());
-        if (price > this.budget) {
+        if (price > this.budget && this.free <= 0) {
             return BLOCKED;
         }
         this.budget -= price;
@@ -583,6 +707,9 @@ public final class ShockWave {
         } else {
             BlockScatter.shatter(this.level, broken, state, this.worldImpact,
                     this.impactVelocity, profile.resistance());
+        }
+        if (this.free > 0) {
+            this.free--;
         }
         return BROKEN;
     }
@@ -679,6 +806,7 @@ public final class ShockWave {
         }
         tick = now;
         brokenThisTick = 0;
+        MEASURE.forget();
         FRACTURES.clear();
         WAVES.clear();
 

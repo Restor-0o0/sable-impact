@@ -729,7 +729,13 @@ public final class ImpactConfig {
             .comment("How far a crack may drift off the flat plane it started on, in blocks. At 0 a build is cut",
                     "as though by a saw, which is legible and looks like nothing that has ever broken. Each",
                     "step the crack may wander a block along its own normal, up to this, so what it leaves is a",
-                    "ragged seam. Costs nothing: it is the same one block per column either way.")
+                    "ragged seam.",
+                    "The block on the plane is taken as well as the one the seam wandered onto, so the drift",
+                    "widens the cut rather than moving it. It has to be: Sable decides what is still one build",
+                    "by neighbours including the diagonals, so a seam that merely moves is one two columns can",
+                    "still be traced across through the corner - which is a build cut end to end and still in",
+                    "one piece with a groove in it. Wandering therefore costs the blocks it wanders over, and",
+                    "0 is a clean saw cut and the cheapest.")
             .defineInRange("fractureWander", 2, 0, 16);
 
     public static final ModConfigSpec.IntValue FRACTURE_GAP = BUILDER
@@ -753,6 +759,55 @@ public final class ImpactConfig {
                     "or it has not split anything - so it is priced to cross what it starts on.",
                     "1.0 makes cracking cost exactly what pulverising does, which in practice turns it off.")
             .defineInRange("fractureCost", 0.05, 0.001, 1.0);
+
+    public static final ModConfigSpec.BooleanValue FRACTURE_AIM = BUILDER
+            .comment("Whether a crack is cut across the way the build actually runs, rather than across whichever",
+                    "axis came up next.",
+                    "A crack is a plane and a plane is named by the axis it is cut across, and until 1.9.1 that",
+                    "axis was dealt out in turn - X, then Y, then Z - so that two cracks would cross rather than",
+                    "repeat. On a solid lump that is fine. On anything anybody builds it is wrong two times in",
+                    "three, because the axis a thing is thin along is the one axis it cannot be parted across.",
+                    "A mast cut across its length falls in two; a mast cut along its length is two half-masts",
+                    "still joined at both ends, and the ship that flew into it is stopped by a mast that is",
+                    "still there. A one-block plate cut across its width parts; cut across its thickness the",
+                    "plane is the plate, and what the crack does is chew a hole out of the middle of it and stop",
+                    "when the energy runs out.",
+                    "On, the material is followed out from the break in all three directions and the cut is made",
+                    "across whichever it runs furthest along, which is the mast's length, the plate's width and,",
+                    "on a hull, the cut amidships that leaves the stern behind. Off restores the pre-1.9.1",
+                    "behaviour exactly.")
+            .define("fractureAim", true);
+
+    public static final ModConfigSpec.IntValue FRACTURE_SCAN = BUILDER
+            .comment("How far the crack looks along each axis to decide which way the build runs, in blocks.",
+                    "Three lines of this many reads per cut, and a cut is a couple per build per tick, so it is",
+                    "cheap at any sane value. It only has to be long enough to tell a mast from a deck: past the",
+                    "point where one axis is plainly the longest, more reach changes nothing. Gaps are crossed",
+                    "on the way, on the same allowance a crack itself gets, so a hull measures as the length of",
+                    "the hull rather than as the thickness of the one plate the break happened to be in.")
+            .defineInRange("fractureScan", 48, 1, 512);
+
+    public static final ModConfigSpec.IntValue FRACTURE_MIN_RUN = BUILDER
+            .comment("How far the build has to run along an axis before a cut across that axis counts as a cut,",
+                    "in blocks. Below it the plane lies in the face of the thing rather than through it, which",
+                    "is a bite rather than a break, and no number of them ever separates anything.",
+                    "Cracks after the first take the next longest axis down, so a plate is cut across its length",
+                    "and then across its width and comes apart in four - but never across its thickness, however",
+                    "many cracks it is given. Raise it and cracks are only ever made across the long dimensions",
+                    "of a build; at 1 nothing is excluded and the second cut on a plate is the old bite again.")
+            .defineInRange("fractureMinRun", 3, 1, 64);
+
+    public static final ModConfigSpec.IntValue FRACTURE_FLOOR = BUILDER
+            .comment("How many blocks a crack may take before the price of them is looked at at all.",
+                    "fractureCost already makes cuts cheap, but cheap is not the same as certain, and a cut that",
+                    "stops halfway has split nothing: what it leaves is a notch, and the build it is in is still",
+                    "one build with a groove in it. This is the guarantee that a cut which was worth starting is",
+                    "worth finishing - past it the energy has to be there as before.",
+                    "It is not a licence to destroy: everything else still applies, so the build's own damage",
+                    "allowance under [protect], the per-tick ceiling and the per-impact ceiling all stop a crack",
+                    "exactly as they did. Set it to 0 for the pre-1.9.1 behaviour, where a crack is only ever as",
+                    "long as the crash could pay for.")
+            .defineInRange("fractureFloor", 128, 0, 8192);
 
     public static final ModConfigSpec.DoubleValue SHOCK_COST = BUILDER
             .comment("What one block's resistance costs the wave passing through it. Higher makes material",
@@ -1773,6 +1828,10 @@ public final class ImpactConfig {
                          int fractureWander,
                          int fractureGap,
                          double fractureCost,
+                         boolean fractureAim,
+                         int fractureScan,
+                         int fractureMinRun,
+                         int fractureFloor,
                          double shockCost,
                          double shockFalloff,
                          int shockMaxPerImpact,
@@ -1931,6 +1990,10 @@ public final class ImpactConfig {
                     FRACTURE_WANDER.get(),
                     FRACTURE_GAP.get(),
                     FRACTURE_COST.get(),
+                    FRACTURE_AIM.get(),
+                    FRACTURE_SCAN.get(),
+                    FRACTURE_MIN_RUN.get(),
+                    FRACTURE_FLOOR.get(),
                     SHOCK_COST.get(),
                     SHOCK_FALLOFF.get(),
                     SHOCK_MAX_PER_IMPACT.get(),
