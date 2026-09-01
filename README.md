@@ -29,6 +29,11 @@ speed for every block it takes.
   afford, so a wall too strong to break is something the crash passes *through* on its way to the glass
   behind it - and the windows go out along the whole length of a ship whose decks held. See
   [Stress](#stress-strength-against-strength-not-price-against-purse).
+- **Load bearing.** Weight in the world is routed to whatever is holding it up rather than spread around
+  where it landed, so the legs under a platform take the ship that was dropped on it, buckle under it, and
+  bring down the deck they were holding - and nothing is left hanging in the air on a structure that is no
+  longer there. It needs no impact: a build simply parked on a roof loads the walls under it. See
+  [Load bearing](#load-bearing-what-holds-the-world-up).
 - **Debris.** Broken blocks are thrown clear as falling blocks and go looking for somewhere to sit when they
   land, instead of vanishing the moment the spot they came down in happens to be taken. See
   [Debris](#debris-what-flies-and-where-it-lands).
@@ -624,6 +629,79 @@ still comes apart — that is the wave's job, and the wave has no such scruples 
 Set `collapse = false` for the pre-1.5 behaviour, where the only thing that ever destroys a build is the
 energy of the crash.
 
+## Load bearing: what holds the world up
+
+Everything above prices a block against the thing that hit it. That is the whole of an impact and none of a
+structure.
+
+Stand a platform on two pillars and drop a ship on it. Every pass in this mod does its job: the deck under
+the ship breaks, the shock runs out through what was attached to it, the debris falls. The pillars are never
+touched, so nothing ever happens to them - and the ends of the deck they were holding are not touched either,
+so they stay exactly where they were, hanging in the air on nothing at all, like a plank left on a branch.
+The ship was heavy enough to punch a hole in the middle of the structure and not heavy enough to matter to
+the legs, which is not a thing weight does.
+
+So there is a second question, and it is asked about the world rather than about the impact: **where does the
+weight go**.
+
+### Routing, not spreading
+
+The crush pass already asks something that sounds similar - how hard is this hull pressing on the blocks it
+is touching - and answers it by pushing that pressure down and out a few blocks and letting it fade. That is
+right for the ground under a landing, where the answer really is a bulb of pressure that peters out, and
+useless for a structure, where the answer is a pillar forty blocks away.
+
+This pass routes instead. Blocks around a disturbance are pulled into a box; every solid block in it is given
+a route to whatever is holding it up, and its weight is added along that route. Stacking straight up costs
+nothing - a column stands on itself, however tall. Hanging sideways or downwards costs a step, and `span` is
+how many of those a load may take before it has run out of structure to travel through.
+
+Two answers come back, and both are failures:
+
+- **Overloaded.** The block is carrying more than its material can carry. This is the pillar buckling under
+  the ship that was put on the deck above it.
+- **Unsupported.** The routing never reached it at all: there is no path from this block to anything holding
+  it up. This is the plank on the branch.
+
+Everything that failed gives way, the box is solved again with it gone, and the round repeats. That is the
+part that matters most: the load that was going through the pillar has to leave some other way, and usually
+there is no other way, so the deck comes down in the same breath as the legs rather than as a drizzle of one
+block a second for the next minute. `rounds` is how far that is allowed to run in a single visit.
+
+### Weight at rest
+
+None of this needs an impact. The load a build is pressing onto the world is measured by the crush pass every
+tick a build is touching anything at all, moving or parked, and it is that number - kilogrammes on a block,
+the same units Sable weighs builds in - that is fed in at the contact. So a ship set down gently on a roof
+loads the walls under it exactly as hard as its own mass says, and if the walls are not up to it they come
+down without the ship ever having hit anything.
+
+Set `rest = false` to have only destruction disturb anything, and a build resting on a structure weigh
+nothing to it.
+
+### What it costs, and what it will not touch
+
+Work is queued by region - a sixteen-block cube - and not by block, because a crater is thousands of breaks
+in a handful of cubes and solving the cube once is the entire point. A region is looked at again only if the
+last look broke something in it, so a wreck that has settled stops costing anything. A block that falls
+queues its own region, which is how a failure climbs out of the cube it started in and walks up a tower.
+
+The box is the region plus a margin, and the margin is deliberately lopsided: `drop` reaches far below,
+because what holds a structure up is underneath it and the legs are the whole point, while `rise` is small,
+because anything overhead will queue its own region the moment it starts moving. Whatever is still standing
+against the wall of the box is anchored there rather than dropped - the structure carries on outside and the
+box cannot see how, so the conservative reading is the only honest one. The same goes for a chunk that is not
+loaded: unknown is treated as ground.
+
+It runs on terrain. A build pressing on another build is Rapier's problem and Rapier is already solving it;
+nothing here ever names a coordinate out in the plot grid.
+
+`pressureScale` is the calibration. It is set so that solid rock never fails under rock - the deepest column
+the box can see weighs about forty, and stone carries near five hundred - while a build putting thousands of
+kilogrammes through two pillars takes them out at once. Lower it and structures fold under less; raise it and
+only the unsupported ones ever come down. Set `bearing = false` for the pre-1.9 behaviour, where terrain
+breaks only where something touched it and the leftovers hang where they were.
+
 ## Protection: how much of a build one crash may take
 
 Everything above decides whether a given block should break. Nothing decided how much of one structure may
@@ -950,6 +1028,7 @@ code, and a Sable release that fixes the same thing properly should be able to h
 
 | Option | Default | |
 |---|---|---|
+| `guardDeadBodyReads` | `true` | Whether Sable's autosave may ask a destroyed rigid body how fast it is going. Same fault as the row below, at the other end: a build this mod empties has its physics body destroyed at once but stays in the container's list until the sweep, and an autosave landing in that window serialises it, velocities included. Rapier answers a read on a destroyed body by throwing, out of `ServerLevel.save`. On, a destroyed body reports standing still, which is both true and what would have been written had the sweep gone first. `false` restores the stock behaviour, crash included. |
 | `guardRemovedSplits` | `true` | Whether a sub-level Sable has already removed is allowed to go on splitting itself. Sable marks a build removed the moment its last mass goes, but only collects removed builds once every build has ticked; a build this mod empties is emptied after that sweep has run for the tick, so the dead build gets one more tick of its own, finishes its connectivity check and tries to assemble what it found inside a plot that no longer exists. Sable answers that by throwing, on the server thread, which ends the world. `false` restores the stock behaviour, crash included. |
 
 ### Collapse
@@ -967,6 +1046,28 @@ Section `[collapse]`. See [Collapse](#collapse-what-a-build-does-once-it-has-lan
 | `cooldown` | `10` | Ticks before the same build may be given another front. What makes the storeys separate events. |
 | `maxBlocksPerTick` | `2048` | Ceiling on blocks all collapses together may drop per level per tick. What this stops is not resumed later. |
 | `minSpeed` | `14.0` | Speed (m/s) below which a landing does not fold the build at all. Separate from `shock.minSpeed`, and the difference between a hard landing and a crash. |
+
+### Load bearing
+
+Section `[bearing]`. See [Load bearing](#load-bearing-what-holds-the-world-up).
+
+| Option | Default | |
+|---|---|---|
+| `bearing` | `true` | Whether the world carries weight at all. `false` is the pre-1.9 behaviour: terrain breaks only where something touched it, and the leftovers hang where they were. |
+| `blockWeight` | `1.0` | What one block weighs, in the same units a build presses with. Sable weighs a plain block at 1 kg, so `1.0` is the honest reading. |
+| `pressureScale` | `400.0` | Load a block carries per point of its resistance. Set so rock never fails under rock while two pillars fail under a ship. The main dial. |
+| `span` | `24` | How many sideways or downward steps a load may take on its way to the ground. Up is free. Past the last one the block is unsupported and falls. |
+| `hanging` | `true` | Whether blocks with no route to the ground at all fall. `false` keeps only the overload check, which is the halfway house. |
+| `rest` | `true` | Whether a build's weight loads the world when nothing is moving. `false` makes a parked build weightless to what it is parked on. |
+| `margin` | `4` | How far outside the region the box reaches sideways. Keeps the anchored wall of the box away from the part being judged. |
+| `drop` | `20` | How far below the region the box reaches, which is how far down it can see the legs. The deepest margin on purpose. |
+| `rise` | `8` | How far above the region the box reaches. Small, because what is overhead queues its own region as soon as it moves. |
+| `rounds` | `8` | How many times one box may break something and be solved again in a single visit. The difference between a collapse and a drizzle. |
+| `interval` | `4` | Ticks between solves, at the closest. The cost is the box, not the damage, so this is the main dial for what the pass costs. |
+| `regionsPerTick` | `2` | How many regions one solve works through before leaving the rest for later. |
+| `maxRegions` | `96` | How many regions may be waiting at once. Past this a disturbance is dropped rather than queued. |
+| `maxPerTick` | `384` | How many blocks the whole pass may drop in one tick, across every region it visits. |
+| `fallSpeed` | `0.0` | How hard a block that lost its support is thrown. Zero lets it drop and heap where it stood. |
 
 ### Protection
 

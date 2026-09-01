@@ -54,6 +54,7 @@ public final class BlockScatter {
                                final double impactVelocity,
                                final double resistance) {
         final ImpactConfig.Tuning tuning = ImpactConfig.tuning();
+        Bearing.disturb(level, pos);
         final double speed = ImpactResolver.scatterSpeed(
                 impactVelocity, resistance, tuning.scatterVelocityScale());
 

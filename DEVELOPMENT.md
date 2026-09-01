@@ -104,6 +104,8 @@ pass is stopped by it exactly once instead of finding the ground gone mid-step.
 | `VoxelClassifier.java` | Sable's per-block collider classification, done faster. Purely an optimisation. |
 | `ContactTracker.java` | Contact-block counts per sub-level, which is the denominator of the whole mass model. |
 | `Collapse.java` | What a build sheds after the crash is over, one column at a time. |
+| `LoadPath.java` | Pure solver: routes every cell in a box of blocks to whatever is holding it up and adds the weight along the route. No Minecraft, so it is unit-tested. |
+| `Bearing.java` | Runs `LoadPath` over the world by region: seeds the load a build is resting with, breaks what is overloaded or unsupported, and re-solves until nothing more falls. |
 | `BuildDamage.java` | How much of a build one crash is allowed to take, and what it does when it has taken it. |
 | `GlassRun.java` | The fragile pass: a flood fill through solid material that takes out the windows and leaves the walls. |
 | `BoundsBatch.java` | Holds Sable's bounding-box rebuilds back until the break pass is over, then runs each one once. |
@@ -123,9 +125,10 @@ pass is stopped by it exactly once instead of finding the ground gone mid-step.
 | `mixin/PlotChunkHolderMixin.java` | Exposes Sable's private `buildBoundingBox` so `BoundsBatch` can call it. |
 | `mixin/SableCommonEventsMixin.java` | Sends Sable's own bounding-box rebuilds through `BoundsBatch` instead. |
 | `mixin/SubLevelHeatMapManagerMixin.java` | Stops a sub-level Sable has already removed from splitting itself into new ones. |
+| `mixin/RigidBodyHandleMixin.java` | Lets a destroyed physics body report standing still, instead of throwing at the autosave that asked. |
 
 `src/test/java/…` — `ImpactResolverTest` (the bulk of it), `SweepDetailTest`, `BackingTest`, `ShockWaveTest`,
-`StressTest`.
+`StressTest`, `LoadPathTest`.
 
 `src/main/resources/` — `impact_logo.png` at the jar root is the mod list entry's logo, named by
 `logoFile` in `neoforge.mods.toml`. Under `assets/create_aeronautics_impact/`, `lang/en_us.json` names every

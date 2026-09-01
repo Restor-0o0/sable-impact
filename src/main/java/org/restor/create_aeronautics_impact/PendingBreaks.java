@@ -222,6 +222,7 @@ public final class PendingBreaks {
                                   final boolean timed) {
         int broken = Collapse.tick(level, tuning, deadline);
         broken += ShockWave.resume(level, tuning, deadline);
+        broken += Bearing.tick(level, tuning, deadline);
 
         final Bucket bucket = LEVELS.remove(level);
         if (bucket == null) {

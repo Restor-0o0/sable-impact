@@ -8,6 +8,7 @@
     "BlockStateProfileMixin",
     "FallingBlockEntityMixin",
     "PlotChunkHolderMixin",
+    "RigidBodyHandleMixin",
     "SableCommonEventsMixin",
     "SubLevelHeatMapManagerMixin",
     "VoxelNeighborhoodStateMixin"

@@ -909,6 +909,122 @@ public final class ImpactConfig {
     }
 
     static {
+        BUILDER.comment("What a structure is standing on, and what happens to it when that stops being true.",
+                        "Every other pass in this mod prices a block against the thing that hit it, which is",
+                        "the whole of an impact and none of a structure. A gantry on two legs takes its whole",
+                        "weight through the legs, and nothing here had ever heard of them: the legs were never",
+                        "loaded, so they never buckled, and the deck they held stayed up in the air after the",
+                        "middle of it was blown out, hanging on nothing like a branch.",
+                        "So the blocks around a disturbance are pulled into a box, the weight a build is",
+                        "resting on them with is added at the contact, and every block's load is routed down to",
+                        "whatever is actually holding it - stacking straight up is free, hanging sideways is",
+                        "not. Anything carrying more than it can, and anything being carried by nothing at all,",
+                        "gives way; the box is solved again with it gone, and that repeats until nothing more",
+                        "falls. The legs go first, then what they were holding, in the same breath.",
+                        "It runs on terrain. A build pressing on another build is Rapier's to settle, and it",
+                        "already does.")
+                .push("bearing");
+    }
+
+    public static final ModConfigSpec.BooleanValue BEARING = BUILDER
+            .comment("Whether the world carries weight at all. Off is the pre-1.9 behaviour: terrain breaks",
+                    "only where something touched it, and whatever is left over hangs where it was.")
+            .define("bearing", true);
+
+    public static final ModConfigSpec.DoubleValue BEARING_BLOCK_WEIGHT = BUILDER
+            .comment("What one block weighs, in the same units as the load a build presses with.",
+                    "Sable weighs a plain block at 1 kg, so 1.0 is the honest reading and a structure's own",
+                    "mass is comparable with the mass of whatever lands on it. Lower it to have the world",
+                    "hold up better under itself while still failing under a ship.")
+            .defineInRange("blockWeight", 1.0, 0.0, 1000.0);
+
+    public static final ModConfigSpec.DoubleValue BEARING_PRESSURE_SCALE = BUILDER
+            .comment("How much load a block carries per point of its resistance before it gives way.",
+                    "The same shape as the crush pass's own scale and a separate number on purpose: that one",
+                    "is a hull grinding across ground, this one is a pillar under a roof, and they are not",
+                    "the same test. Raise it and structures stand under more; lower it and they fold.",
+                    "The default is set so that solid rock never fails under rock - the deepest column the",
+                    "box can see weighs about forty and stone carries near five hundred - while a build",
+                    "putting thousands of kilogrammes through two pillars takes them out at once.")
+            .defineInRange("pressureScale", 400.0, 0.1, 100000.0);
+
+    public static final ModConfigSpec.IntValue BEARING_SPAN = BUILDER
+            .comment("How far a load may travel sideways or downwards on its way to the ground.",
+                    "Stacking straight up costs nothing, so a column of any height stands; every sideways or",
+                    "downward tie costs one of these. Past the last one the block is called unsupported and",
+                    "comes down, which is what makes an overhang finite and a cantilever fall off.")
+            .defineInRange("span", 24, 0, 512);
+
+    public static final ModConfigSpec.BooleanValue BEARING_HANGING = BUILDER
+            .comment("Whether blocks with no route to the ground at all fall.",
+                    "This is the branch a build was left hanging on. Off leaves floating leftovers in place",
+                    "and keeps only the overload check, which is the halfway house if the falling is too much.")
+            .define("hanging", true);
+
+    public static final ModConfigSpec.BooleanValue BEARING_REST = BUILDER
+            .comment("Whether a build's weight is put on the world even when nothing is moving.",
+                    "The load comes from the crush pass, which measures it every tick a build is touching",
+                    "anything - so a hull parked on a roof loads the walls under it and, if they are not up to",
+                    "it, brings them down without ever having to hit them. Off means only what is destroyed",
+                    "disturbs anything, and a build resting on a structure is weightless to it.")
+            .define("rest", true);
+
+    public static final ModConfigSpec.IntValue BEARING_MARGIN = BUILDER
+            .comment("How far outside the sixteen-block region the box reaches sideways.",
+                    "Whatever is left standing on the wall of the box is anchored there rather than dropped,",
+                    "because the structure carries on outside and the box cannot see how. The margin is what",
+                    "keeps that wall away from the part being judged.")
+            .defineInRange("margin", 4, 0, 32);
+
+    public static final ModConfigSpec.IntValue BEARING_DROP = BUILDER
+            .comment("How far below the region the box reaches, which is how far down it can see the legs.",
+                    "The deepest of the three margins on purpose: what holds a structure up is underneath it,",
+                    "and a box that stops short of the ground anchors the structure to its own floor and finds",
+                    "everything comfortably supported.")
+            .defineInRange("drop", 20, 0, 128);
+
+    public static final ModConfigSpec.IntValue BEARING_RISE = BUILDER
+            .comment("How far above the region the box reaches. Small, because what is overhead is load, and",
+                    "load re-queues its own region as soon as it starts falling.")
+            .defineInRange("rise", 8, 0, 128);
+
+    public static final ModConfigSpec.IntValue BEARING_ROUNDS = BUILDER
+            .comment("How many times one box may break something and be solved again in a single visit.",
+                    "This is the difference between a collapse and a drizzle: each round takes out everything",
+                    "that failed, then asks where the load goes now that it is gone. One round is a single",
+                    "layer coming off; a dozen is the whole thing coming down while you watch.")
+            .defineInRange("rounds", 8, 1, 64);
+
+    public static final ModConfigSpec.IntValue BEARING_INTERVAL = BUILDER
+            .comment("How many ticks apart two solves may be, at the closest. The cost of a solve is the box,",
+                    "not the damage, so this is the main dial for what the pass costs at all.")
+            .defineInRange("interval", 4, 1, 200);
+
+    public static final ModConfigSpec.IntValue BEARING_REGIONS_PER_TICK = BUILDER
+            .comment("How many regions one solve may work through before leaving the rest for later.")
+            .defineInRange("regionsPerTick", 2, 1, 64);
+
+    public static final ModConfigSpec.IntValue BEARING_MAX_REGIONS = BUILDER
+            .comment("How many regions may be waiting at once. Past this a disturbance is dropped rather than",
+                    "queued: a wreck that has already filled the queue is going to be revisited anyway, and",
+                    "the queue is not where a backlog should be allowed to live.")
+            .defineInRange("maxRegions", 96, 1, 4096);
+
+    public static final ModConfigSpec.IntValue BEARING_MAX_PER_TICK = BUILDER
+            .comment("How many blocks the whole pass may drop in one tick, across every region it visits.")
+            .defineInRange("maxPerTick", 384, 0, 100000);
+
+    public static final ModConfigSpec.DoubleValue BEARING_FALL_SPEED = BUILDER
+            .comment("How hard a block that lost its support is thrown. Zero lets it drop and heap where it",
+                    "stood, which is what a structure coming apart under its own weight looks like; anything",
+                    "above it starts to read as a demolition charge.")
+            .defineInRange("fallSpeed", 0.0, 0.0, 1000.0);
+
+    static {
+        BUILDER.pop();
+    }
+
+    static {
         BUILDER.comment("How much of one build this mod may destroy, which is a different question from whether",
                         "any given block should break.",
                         "Nothing used to ask it, and the answer turned out to be all of it. A wave and a",
@@ -1172,6 +1288,18 @@ public final class ImpactConfig {
                     "the sweep a few lines further on is about to do to it in any case.",
                     "Off restores the stock behaviour, crash included.")
             .define("guardRemovedSplits", true);
+
+    public static final ModConfigSpec.BooleanValue GUARD_DEAD_BODY_READS = BUILDER
+            .comment("Whether Sable's autosave is allowed to ask a destroyed rigid body how fast it is going.",
+                    "Same ordering fault as the one above, at the other end. A sub-level whose mass this mod",
+                    "has finished off has its Rapier body destroyed at once, but it stays in the container's",
+                    "list until the sweep - and an autosave landing in that window walks the list and writes",
+                    "every sub-level out, velocities included. Rapier answers a read on a destroyed body with",
+                    "'Body has been removed', thrown out of the save, which takes the server with it.",
+                    "On, a destroyed body reports standing still, which is the truth about it and what the",
+                    "serializer would have written anyway had the sweep gone first.",
+                    "Off restores the stock behaviour, crash included.")
+            .define("guardDeadBodyReads", true);
 
     static {
         BUILDER.pop();
@@ -1524,6 +1652,14 @@ public final class ImpactConfig {
     }
 
     /**
+     * Read straight off the spec for the third time: it is asked from Sable's serializer, which runs from
+     * the world save and so from no tick of this mod's at all.
+     */
+    public static boolean guardDeadBodyReads() {
+        return enabled() && GUARD_DEAD_BODY_READS.get();
+    }
+
+    /**
      * Whether this mod is doing anything at all in this world. Read straight off the spec for the same
      * reason: it is asked from the remesh as well as from the tick, and it has to answer before the spec is
      * loaded, which is the state a world is in while it is still starting up.
@@ -1653,6 +1789,21 @@ public final class ImpactConfig {
                          DebrisMode debrisMode,
                          int maxSettlePerTick,
                          double collapseMinSpeed,
+                         boolean bearing,
+                         double bearingBlockWeight,
+                         double bearingPressureScale,
+                         int bearingSpan,
+                         boolean bearingHanging,
+                         boolean bearingRest,
+                         int bearingMargin,
+                         int bearingDrop,
+                         int bearingRise,
+                         int bearingRounds,
+                         int bearingInterval,
+                         int bearingRegionsPerTick,
+                         int bearingMaxRegions,
+                         int bearingMaxPerTick,
+                         double bearingFallSpeed,
                          boolean protectBuilds,
                          int protectMaxPerTick,
                          int protectMaxPerImpact,
@@ -1796,6 +1947,21 @@ public final class ImpactConfig {
                     DEBRIS_MODE.get(),
                     MAX_SETTLE_PER_TICK.get(),
                     COLLAPSE_MIN_SPEED.get(),
+                    BEARING.get(),
+                    BEARING_BLOCK_WEIGHT.get(),
+                    BEARING_PRESSURE_SCALE.get(),
+                    BEARING_SPAN.get(),
+                    BEARING_HANGING.get(),
+                    BEARING_REST.get(),
+                    BEARING_MARGIN.get(),
+                    BEARING_DROP.get(),
+                    BEARING_RISE.get(),
+                    BEARING_ROUNDS.get(),
+                    BEARING_INTERVAL.get(),
+                    BEARING_REGIONS_PER_TICK.get(),
+                    BEARING_MAX_REGIONS.get(),
+                    BEARING_MAX_PER_TICK.get(),
+                    BEARING_FALL_SPEED.get(),
                     PROTECT.get(),
                     PROTECT_MAX_PER_TICK.get(),
                     PROTECT_MAX_PER_IMPACT.get(),

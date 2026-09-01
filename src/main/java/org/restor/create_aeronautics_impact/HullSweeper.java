@@ -1000,6 +1000,9 @@ public final class HullSweeper {
 
         for (int index = 0; index < SUPPORT.size(); index++) {
             enqueue(SUPPORT.getLong(index), pressure, 0, true);
+            // The same number the crush pass is about to spread and let fade, handed to the pass that
+            // instead routes it all the way down to whatever is holding the build up.
+            Bearing.rest(level, SUPPORT.getLong(index), pressure);
         }
         for (int index = 0; index < FLANK.size(); index++) {
             enqueue(FLANK.getLong(index), sideways, 0, false);
@@ -1181,6 +1184,7 @@ public final class HullSweeper {
 
         if (tuning.crushDisplace()
                 && displace(level, bounds, pos, state, tuning.crushDisplaceReach())) {
+            Bearing.disturb(level, pos);
             return true;
         }
 
@@ -1188,6 +1192,7 @@ public final class HullSweeper {
         // give way under a weight look like subsidence rather than an explosion.
         BlockScatter.clear(level, pos, drop);
         CrackTracker.spall(level, pos, true, tuning);
+        Bearing.disturb(level, pos);
         return true;
     }
 
