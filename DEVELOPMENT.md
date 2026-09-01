@@ -104,7 +104,9 @@ pass is stopped by it exactly once instead of finding the ground gone mid-step.
 | `VoxelClassifier.java` | Sable's per-block collider classification, done faster. Purely an optimisation. |
 | `ContactTracker.java` | Contact-block counts per sub-level, which is the denominator of the whole mass model. |
 | `CrackPlane.java` | Pure solver: given how far a build's material runs along each axis, which axis a crack is cut across. No Minecraft, so it is unit-tested. |
-| `Collapse.java` | What a build sheds after the crash is over, one column at a time. |
+| `CrackNeck.java` | Pure solver: given what each cross-section within reach of a contact is holding, where along the axis to cut. No Minecraft, so it is unit-tested. |
+| `Collapse.java` | What a build sheds after the crash is over, one column at a time, over a front sized to the landing that armed it. |
+| `Splitter.java` | Runs Sable's connectivity search extra times on builds this mod has damaged, so a wreck comes apart on the tick it was severed rather than a minute later. |
 | `LoadPath.java` | Pure solver: routes every cell in a box of blocks to whatever is holding it up and adds the weight along the route. No Minecraft, so it is unit-tested. |
 | `Bearing.java` | Runs `LoadPath` over the world by region: seeds the load a build is resting with, breaks what is overloaded or unsupported, and re-solves until nothing more falls. |
 | `BuildDamage.java` | How much of a build one crash is allowed to take, and what it does when it has taken it. |
@@ -129,7 +131,7 @@ pass is stopped by it exactly once instead of finding the ground gone mid-step.
 | `mixin/RigidBodyHandleMixin.java` | Lets a destroyed physics body report standing still, instead of throwing at the autosave that asked. |
 
 `src/test/java/…` — `ImpactResolverTest` (the bulk of it), `SweepDetailTest`, `BackingTest`, `ShockWaveTest`,
-`StressTest`, `LoadPathTest`, `CrackPlaneTest`.
+`StressTest`, `LoadPathTest`, `CrackPlaneTest`, `CrackNeckTest`.
 
 `src/main/resources/` — `impact_logo.png` at the jar root is the mod list entry's logo, named by
 `logoFile` in `neoforge.mods.toml`. Under `assets/create_aeronautics_impact/`, `lang/en_us.json` names every

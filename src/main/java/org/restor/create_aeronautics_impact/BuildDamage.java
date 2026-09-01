@@ -120,6 +120,7 @@ public final class BuildDamage {
         if (subLevel.isRemoved()) {
             return false;
         }
+        Splitter.damaged(level, subLevel);
         if (!tuning.protectBuilds()) {
             return true;
         }

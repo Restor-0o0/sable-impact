@@ -210,6 +210,16 @@ public final class ShockWave {
         broken += GlassRun.spread(level, origin, worldImpact, impactVelocity,
                 contraption, bodyId, tuning, deadline);
 
+        // What a build is allowed to shrug off. Terrain is a hillside and comes apart the way a hillside
+        // does; a build is a made thing, and what its frames and skins and joints are for is precisely to
+        // carry a blow somewhere other than into the block next to it. A belly touching a treetop, a mast
+        // catching a mast, a landing that was merely rough - those leave a hole where they touched and a seam
+        // running out of it, which is what they should leave. Spreading a wave through the hull as well is
+        // what turned a scrape into a ship shedding its decks.
+        if (contraption && Math.abs(impactVelocity) < tuning.hullMinSpeed()) {
+            return broken;
+        }
+
         // Asked before the energy is drawn, so what a refused contact would have spent stays in the
         // reservoir for the cracks. A hull landing flat reports contacts in the hundreds and the contact
         // side of a shock is priced per contact rather than out of the reservoir, so without a cap on how
@@ -223,7 +233,14 @@ public final class ShockWave {
 
         final double scale = contraption ? tuning.hullShockScale() : tuning.terrainShockScale();
         final double contact = ImpactResolver.shockEnergy(overshoot, tuning.shockMinOvershoot(), scale);
-        final double energy = Math.max(contact, draw(bodyId, contraption, kinetic,
+
+        // And what is left of a blow after the build has carried it. Applied after the draw rather than
+        // instead of it, so the crash still spends what it spends - a hull does not get more crashes out of
+        // one landing for having survived it - and applied to the intensity as well, because a shock a
+        // structure damped is not merely a smaller shock, it is a gentler one. The cracks are untouched:
+        // a crack is the break that was wanted, and it is priced on its own under fractureCost.
+        final double share = contraption ? tuning.hullShare() : 1.0;
+        final double energy = share * Math.max(contact, draw(bodyId, contraption, kinetic,
                 tuning.shockContactShare()));
         if (energy <= 0.0) {
             return broken;
@@ -234,7 +251,7 @@ public final class ShockWave {
         // much work may be done. An intensity is not work: every contact of the same landing is the same
         // crash arriving, and dividing its strength by how many faces happened to touch would make a hull
         // that lands flat softer than one that lands on a corner.
-        final double intensity = Math.max(contact, kinetic) * tuning.intensityScale();
+        final double intensity = share * Math.max(contact, kinetic) * tuning.intensityScale();
 
         return broken + start(level, origin, worldImpact, impactVelocity,
                 contraption, null, energy, intensity, tuning, deadline);
@@ -284,8 +301,106 @@ public final class ShockWave {
         }
         FRACTURES.put(key, already + 1);
 
-        return start(level, origin, worldImpact, impactVelocity, true,
-                aim(level, origin, bodyId, already, tuning), total, 0.0, tuning, deadline);
+        final Direction.Axis axis = aim(level, origin, bodyId, already, tuning);
+        return start(level, neck(level, origin, axis, tuning), worldImpact, impactVelocity, true,
+                axis, total, 0.0, tuning, deadline);
+    }
+
+    /**
+     * Moves the cut off the contact and onto the weakest cross-section within reach of it.
+     *
+     * <p>{@link CrackNeck} does the choosing and the reasoning is there. All this does is weigh every
+     * candidate plane and then find a block of the winning one to start the crack from, because a wave seeded
+     * in mid-air is a wave that never reaches anything.
+     */
+    private static BlockPos neck(final ServerLevel level, final BlockPos origin,
+                                 final Direction.Axis axis, final ImpactConfig.Tuning tuning) {
+        final int reach = tuning.fractureNeck();
+        if (reach <= 0) {
+            return origin;
+        }
+
+        final int span = tuning.fractureNeckSpan();
+        final double[] costs = new double[2 * reach + 1];
+        for (int index = 0; index < costs.length; index++) {
+            costs[index] = section(level, origin, axis, index - reach, span);
+        }
+
+        final int offset = CrackNeck.weakest(costs, tuning.fractureNeckBias());
+        if (offset == 0) {
+            return origin;
+        }
+        final BlockPos anchor = anchor(level, origin, axis, offset, span);
+        return anchor == null ? origin : anchor;
+    }
+
+    /**
+     * What one candidate cross-section is holding, as the summed resistance of the blocks standing in it.
+     *
+     * <p>Infinite for a section that is no candidate at all: one holding something that cannot be broken,
+     * since a cut that cannot be finished is a notch; and one holding nothing, since an empty cross-section
+     * is not a weak place to cut but a place that is already cut, past the end of the thing.
+     */
+    private static double section(final ServerLevel level, final BlockPos origin,
+                                  final Direction.Axis axis, final int offset, final int span) {
+        double cost = 0.0;
+        int solid = 0;
+        for (int u = -span; u <= span; u++) {
+            for (int v = -span; v <= span; v++) {
+                place(origin, axis, offset, u, v);
+                final BlockState state = MEASURE.stateIfLoaded(level, MEASURING);
+                if (state == null || state.isAir()) {
+                    continue;
+                }
+                final BlockProfile profile = BlockProfile.of(level, MEASURING, state);
+                if (profile.indestructible()) {
+                    return Double.POSITIVE_INFINITY;
+                }
+                if (profile.passable()) {
+                    continue;
+                }
+                cost += profile.resistance();
+                solid++;
+            }
+        }
+        return solid == 0 ? Double.POSITIVE_INFINITY : cost;
+    }
+
+    /** A block of the chosen section to seed the crack from, the nearest one to where the blow landed. */
+    private static @Nullable BlockPos anchor(final ServerLevel level, final BlockPos origin,
+                                             final Direction.Axis axis, final int offset, final int span) {
+        BlockPos best = null;
+        int nearest = Integer.MAX_VALUE;
+        for (int u = -span; u <= span; u++) {
+            for (int v = -span; v <= span; v++) {
+                final int distance = u * u + v * v;
+                if (distance >= nearest) {
+                    continue;
+                }
+                place(origin, axis, offset, u, v);
+                final BlockState state = MEASURE.stateIfLoaded(level, MEASURING);
+                if (state == null || state.isAir()) {
+                    continue;
+                }
+                final BlockProfile profile = BlockProfile.of(level, MEASURING, state);
+                if (profile.indestructible() || profile.passable()) {
+                    continue;
+                }
+                best = MEASURING.immutable();
+                nearest = distance;
+            }
+        }
+        return best;
+    }
+
+    /** Puts the shared cursor on one block of the plane {@code offset} along {@code axis} from the contact. */
+    private static void place(final BlockPos origin, final Direction.Axis axis,
+                              final int offset, final int u, final int v) {
+        switch (axis) {
+            case X -> MEASURING.set(origin.getX() + offset, origin.getY() + u, origin.getZ() + v);
+            case Y -> MEASURING.set(origin.getX() + u, origin.getY() + offset, origin.getZ() + v);
+            case Z -> MEASURING.set(origin.getX() + u, origin.getY() + v, origin.getZ() + offset);
+        }
     }
 
     /**

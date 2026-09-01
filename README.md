@@ -242,7 +242,7 @@ Every setting named here lives in the `[shock]` section of the config file.
 	perContactShare = 0.2
 	maxHullWaves = 1
 	fracture = true
-	fractureShare = 0.6
+	fractureShare = 0.85
 	fractureCount = 2
 	fractureFalloff = 0.995
 	fractureWander = 2
@@ -252,6 +252,11 @@ Every setting named here lives in the `[shock]` section of the config file.
 	fractureScan = 48
 	fractureMinRun = 3
 	fractureFloor = 128
+	hullShare = 0.25
+	hullMinSpeed = 20.0
+	fractureNeck = 12
+	fractureNeckSpan = 6
+	fractureNeckBias = 0.08
 	cost = 1.0
 	falloff = 0.98
 	maxBlocksPerImpact = 8192
@@ -325,6 +330,31 @@ build already eaten cannot come apart into anything.
 
 Terrain is not capped. A hull ploughing a hillside is meant to plough it.
 
+### What a build is allowed to shrug off
+
+Terrain is a hillside and comes apart the way a hillside does. A build is a made thing, and what its frames
+and skins and joints are *for* is to carry a blow somewhere other than into the block next to it. Until 1.9.2
+this mod did not know the difference: a wave through a hull was priced exactly like a wave through a cliff,
+and a ship's belly brushing a treetop shed a deck.
+
+`hullMinSpeed` is the floor under all of it. Below it a contraption still cracks — the plane through the
+contact is cut, the glass still goes — but **nothing spreads outwards from the break**. A belly touching a
+treetop, a mast catching a mast, a landing that was merely rough: those leave a hole where they touched and a
+seam running out of it, which is what they should leave. It is a separate number from `minSpeed` because
+`minSpeed` is about terrain too, and terrain has no business shrugging anything off.
+
+`hullShare` is what is left of a blow that did clear the floor, once the build has carried it: the wave a
+structure passes through itself is that fraction of the one terrain would get, in both what it can afford and
+how hard it arrives. The cracks are not touched by it — a crack is the break that was wanted, and it is priced
+on its own under `fractureCost`. What `hullShare` quiets is the crumbling around the crack.
+
+`contraptionBlockToughness` is the third leg of this, and it is the oldest: how much stronger a build's own
+blocks are than the same blocks in the ground. It went from `1.5` to `3.0` in 1.9.2 for the same reason as the
+rest — a plank in a hull is part of a hull, and a plank in a floor is a plank.
+
+Set `hullShare = 1.0`, `hullMinSpeed = 0.0` and `contraptionBlockToughness = 1.5` for the pre-1.9.2 behaviour,
+where a hull was treated as a hillside.
+
 ### Waves and cracks
 
 A wave spends its energy in every direction at once, so what it leaves is a bite taken out of the build. That
@@ -350,10 +380,10 @@ The count is kept against **the build being cut**, not the one that arrived. A c
 them come apart; keeping it against the striker meant a ship landing on a plate spent both of the plate's cuts
 on its own hull, and the plate was left whole with a hole in it.
 
-#### Which way the cut is made
+#### Where the cut is made
 
-A crack is a plane, and a plane is named by the axis it is cut across. Until 1.9.1 that axis was dealt out in
-turn - X, then Y, then Z - so that two cracks would cross rather than repeat. On a solid lump that is fine. On
+Which way, first. A crack is a plane, and a plane is named by the axis it is cut across. Until 1.9.1 that
+axis was dealt out in turn - X, then Y, then Z - so that two cracks would cross rather than repeat. On a solid lump that is fine. On
 anything anybody builds it is wrong two times in three, because **the axis a thing is thin along is the one
 axis it cannot be parted across**.
 
@@ -382,6 +412,32 @@ under `[protect]`, the per-tick ceiling and the per-impact ceiling all stop a cr
 
 Set `fractureAim = false` and `fractureFloor = 0` for the pre-1.9.1 behaviour: cracks dealt by rotation and
 only ever as long as the crash could pay for.
+
+`fractureNeck` is how far along that axis the crack may travel from the contact looking for a better place to
+break, and it exists because **things do not break where they are hit, they break where they are weakest**. On
+anything built out of one material those are near enough the same block. On anything built out of two they are
+not, and the difference is the whole of what a crash looks like. An obsidian mast with a wooden gondola on the
+end of it, clipped on the gondola, does not crack down the mast: the gondola shears off at its joint, because
+the ring of wood around that joint is the least material carrying the most weight. Cutting at the contact put a
+seam through the middle of the gondola and left the halves of it hanging on the mast.
+
+So every plane within reach is weighed by what is standing in it — the summed resistance of the blocks in a
+window of it, `fractureNeckSpan` blocks either way, which is a cross-section's strength as directly as this mod
+measures anything — and the cut is made at the lightest one. Thin *by strength*, not by block count: four
+blocks of obsidian outweigh forty of wood, and it is the forty that give.
+
+Two kinds of plane are not candidates at all. One holding something unbreakable, because a cut that cannot be
+finished is a notch; and one holding nothing, because an empty cross-section is not a weak place to cut, it is
+a place already cut, past the end of the thing.
+
+`fractureNeckBias` is what a candidate pays per block of distance from the contact, as a share of what cutting
+at the contact itself would have cost. Without it the weakest plane anywhere in reach wins even when the blow
+landed nowhere near it, and builds would come apart at their thinnest point wherever they were touched. The
+price is set against the contact rather than against an average on purpose: put an obsidian spar within reach
+of a wooden hull and the *average* section is the spar, and every step away from the contact would be priced as
+though it cost obsidian to take.
+
+Set `fractureNeck = 0` for the pre-1.9.2 behaviour, where the cut was always made through the contact.
 
 `fractureGap` is how many blocks of nothing a crack may cross before it gives up, and on a real build it is
 the setting that decides whether cracks work at all. A wave is carried by what is solid and has no business
@@ -660,6 +716,27 @@ and that is rarely the floor of the columns around it.
 is touching what it fell on for the whole time it is falling into it, so without a pause every tick of the
 descent would arm a fresh collapse and the build would be gone before it had visibly moved.
 
+#### How big one is
+
+Until 1.9.2 the answer was "the same size every time". A front took the whole of `reach` in every direction
+whatever had happened, so a build that clipped a fence post lost a floor thirty blocks across, and a belly
+that grazed a treetop shed its decks. That is not a collapse, it is a punishment for touching anything.
+
+A collapse is a build failing under its own weight, and how much of it fails depends on two things: how much
+of it was bearing on something, and how hard it arrived. `fit` measures both. The contacts of a landing are
+all reported before the front takes its first step, so they are gathered as they come in and the footprint
+they cover — `margin` blocks wider, for the contacts that were not reported and the damage that does not stop
+exactly where the contact did — is one bound on the front. The other is what the speed earned: `minReach` at
+the speed the gate opened at, the whole of `reach` at `fullSpeed`, and a straight line between. **The smaller
+of the two wins.**
+
+So a build can land flat and fast across a plateau and lose everything it landed on, or hit one place at
+terminal velocity and lose that one place, but nothing gets to lose a floor it was never over. `collapse.minSpeed`
+went from `14` to `28` in the same release, which is the other half of it: a hard landing and a crash are
+different events, and only one of them takes the floor out.
+
+Set `fit = false` for the pre-1.9.2 behaviour.
+
 This is deliberately crude, and it is crude in one specific way: **down is rounded to whichever of the six
 directions is nearest world down** at the moment of the hit, so the whole pass is axis-aligned and a column
 is a straight line. A build lands more or less the way it was flying, and one that has rolled far enough for
@@ -677,6 +754,31 @@ still comes apart — that is the wave's job, and the wave has no such scruples 
 
 Set `collapse = false` for the pre-1.5 behaviour, where the only thing that ever destroys a build is the
 energy of the crash.
+
+## Splitting: telling a build that it is now two builds
+
+Sable decides what is still one structure by flood-filling it, and it spends a fixed few hundred steps a tick
+on that so the walk never costs anybody a frame. For a build losing a block to a pickaxe that is exactly the
+right trade. For a build losing a thousand blocks to a crash it is the wrong one, and the difference is
+visible: the connection is severed on the first tick and found on the fortieth, and what is on the screen in
+between is **a wreck cut cleanly through the middle, hanging in the air in one piece**, held up by a search
+that has not caught up with what happened to it.
+
+Nothing was wrong with the severing. Every removal this mod makes goes through the level, and Sable's own
+block-change hook sees all of them. What was wrong was the rate. So a build this mod has damaged is put on a
+list, and its flood-fill is run extra times for a while.
+
+`rounds` is how many extra passes a damaged build gets per tick — one pass being what Sable itself runs in a
+tick, so the default is a build resolving about twenty-four times sooner. It is a ceiling and not a workload:
+the search is self-limiting, and the moment it has its answer every further round returns immediately. A build
+that has come apart pays for the finding once and then costs nothing until it is hit again.
+
+`ticks` is how long a build stays on that list after the last block it lost, because a wreck keeps coming
+apart for a while after the landing and each new severance wants finding as promptly as the first. `millis` is
+the wall-clock ceiling on all of it per level per tick, whatever the round count says.
+
+Set `resolve = false` and separation still happens, on Sable's own schedule, which on a wreck of any size is
+tens of seconds after the fact.
 
 ## Load bearing: what holds the world up
 
@@ -973,7 +1075,7 @@ In order of how much they save:
 | `minImpactSpeed` | `6.0` | Closing speed (m/s) below which nothing is ever broken. A noise floor: below it a contraption would dig its own grave as it settles. |
 | `fragileTrigger` | `4.0` | Speed (m/s) above which a fragile block is handed back to Sable to shatter on its own terms. |
 | `breakContraptionBlocks` | `true` | Whether a contraption loses its own blocks when it rams terrain harder than they are. |
-| `contraptionBlockToughness` | `1.5` | Multiplier on a contraption block's strength when weighed against terrain. |
+| `contraptionBlockToughness` | `3.0` | Multiplier on a contraption block's strength when weighed against terrain. |
 | `impactWear` | `1.0` | What winning an impact costs the winner, scaled by how evenly matched the two were. Needs `crackBlocks`. |
 
 ### Material strength
@@ -1023,7 +1125,7 @@ Section `[shock]`. See [Shock](#shock-when-an-impact-is-felt-past-the-block-it-b
 | `perContactShare` | `0.2` | The largest share of a crash's remaining energy one contact may spend. Low spreads the damage along the face that hit; `1.0` gives it all to one point. |
 | `maxHullWaves` | `1` | How many waves one contraption may open in a tick, however many contacts it reports. What stops a crash from eating the build outwards in rings. Terrain is not capped. |
 | `fracture` | `true` | Whether a crash also splits a build along cracks. `false` is waves only. |
-| `fractureShare` | `0.6` | The share of a crash spent cutting the build into pieces rather than eating a hole in it. |
+| `fractureShare` | `0.85` | The share of a crash spent cutting the build into pieces rather than eating a hole in it. |
 | `fractureCount` | `2` | How many cracks one crash may open, one per contact, up to this many per build per tick. |
 | `fractureFalloff` | `0.995` | What a crack keeps of its purchasing power per block travelled. Near `1`: a crack is no use unless it crosses the build. |
 | `fractureWander` | `2` | How far a crack may drift off its plane, in blocks. The plane block is taken as well as the wandered one, so the cut widens rather than moves. `0` cuts like a saw and is the cheapest. |
@@ -1033,6 +1135,11 @@ Section `[shock]`. See [Shock](#shock-when-an-impact-is-felt-past-the-block-it-b
 | `fractureScan` | `48` | How far the crack looks along each axis to work out which way the build runs, in blocks. Three lines of reads per cut. |
 | `fractureMinRun` | `3` | How far the build has to run along an axis before a cut across it is a cut rather than a bite. `1` excludes nothing and brings the bite back. |
 | `fractureFloor` | `128` | Blocks a crack may take before its purse is consulted, so a cut worth starting is worth finishing. `0` is the pre-1.9.1 behaviour. Everything under `[protect]` still applies. |
+| `hullShare` | `0.25` | The share of a shock a contraption passes on through itself, against what terrain passes on. What its frames and joints are for. `1.0` is the pre-1.9.2 behaviour, where a hull was a hillside. |
+| `hullMinSpeed` | `20.0` | Speed (m/s) below which a contraption cracks and loses its glass but nothing spreads. What a build is allowed to shrug off. `0` is the pre-1.9.2 behaviour. |
+| `fractureNeck` | `12` | How far along its axis a crack may travel to find a weaker cross-section, in blocks. `0` cuts through the contact, which is 1.9.1. |
+| `fractureNeckSpan` | `6` | How wide a window each candidate section is weighed across, either way. Wider is truer and costs its square in block reads. |
+| `fractureNeckBias` | `0.08` | What a candidate pays per block of distance from the contact, as a share of what cutting at the contact would have cost. Higher keeps cracks at the impact; `0` hunts for the joint however far off it is. |
 | `cost` | `1.0` | What one block's resistance costs the budget. Higher makes material matter more. |
 | `falloff` | `0.98` | The share of its purchasing power a wave keeps per block travelled. What bounds its reach. |
 | `maxBlocksPerImpact` | `8192` | Ceiling on blocks one shock may break. |
@@ -1098,7 +1205,22 @@ Section `[collapse]`. See [Collapse](#collapse-what-a-build-does-once-it-has-lan
 | `drop` | `4` | How far below the contact the search starts, because a hull touches down on whatever hangs lowest. |
 | `cooldown` | `10` | Ticks before the same build may be given another front. What makes the storeys separate events. |
 | `maxBlocksPerTick` | `2048` | Ceiling on blocks all collapses together may drop per level per tick. What this stops is not resumed later. |
-| `minSpeed` | `14.0` | Speed (m/s) below which a landing does not fold the build at all. Separate from `shock.minSpeed`, and the difference between a hard landing and a crash. |
+| `minSpeed` | `28.0` | Speed (m/s) below which a landing does not fold the build at all. Separate from `shock.minSpeed`, and the difference between a hard landing and a crash. |
+| `fit` | `true` | Whether the front is cut to the footprint that actually landed and the speed it landed at, rather than always taking the whole of `reach`. `false` is the pre-1.9.2 behaviour. |
+| `margin` | `2` | How far past the edge of what was touched a fitted front may run, in blocks. The difference between the footprint and the crater. |
+| `minReach` | `2` | The smallest a fitted front may be cut to. A collapse that reaches nothing did not happen. |
+| `fullSpeed` | `30.0` | Speed (m/s) at which a fitted front is allowed the whole of `reach`. Between this and `minSpeed` it grows from `minReach`. |
+
+### Splitting
+
+Section `[split]`. See [Splitting](#splitting-telling-a-build-that-it-is-now-two-builds).
+
+| Option | Default | |
+|---|---|---|
+| `resolve` | `true` | Whether a build this mod has broken is walked harder until it knows what it is. `false` leaves separation on Sable's own schedule, which on a wreck is tens of seconds. |
+| `rounds` | `24` | Extra passes of the connectivity search a damaged build gets per tick. A ceiling, not a workload: a finished search costs nothing. |
+| `ticks` | `200` | How long a build stays on the hurried list after the last block it lost. |
+| `millis` | `3.0` | Wall-clock ceiling on all of it per level per tick. |
 
 ### Load bearing
 

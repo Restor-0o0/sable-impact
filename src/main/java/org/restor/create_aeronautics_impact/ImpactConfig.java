@@ -333,7 +333,7 @@ public final class ImpactConfig {
     public static final ModConfigSpec.DoubleValue CONTRAPTION_BLOCK_TOUGHNESS = BUILDER
             .comment("Multiplier on a contraption block's resistance when it is weighed against the terrain it hit. "
                     + "Above 1 makes builds hold together better than the raw material would suggest.")
-            .defineInRange("contraptionBlockToughness", 1.5, 0.01, 100.0);
+            .defineInRange("contraptionBlockToughness", 3.0, 0.01, 100.0);
 
     public static final ModConfigSpec.DoubleValue BACKING_WEIGHT = BUILDER
             .comment("How much of a terrain block's strength is on loan from what is holding it in place rather",
@@ -707,7 +707,7 @@ public final class ImpactConfig {
                     "Whether a piece that has been cut free then flies off on its own is Sable's decision, not",
                     "this mod's - all this does is make sure nothing is still holding it on.",
                     "0 is the old behaviour, waves only. 1 stops cratering and only ever cleaves.")
-            .defineInRange("fractureShare", 0.6, 0.0, 1.0);
+            .defineInRange("fractureShare", 0.85, 0.0, 1.0);
 
     public static final ModConfigSpec.IntValue FRACTURE_COUNT = BUILDER
             .comment("How many cracks one crash may open, at most. They are opened once per build per tick by",
@@ -808,6 +808,53 @@ public final class ImpactConfig {
                     "exactly as they did. Set it to 0 for the pre-1.9.1 behaviour, where a crack is only ever as",
                     "long as the crash could pay for.")
             .defineInRange("fractureFloor", 128, 0, 8192);
+
+    public static final ModConfigSpec.DoubleValue HULL_SHARE = BUILDER
+            .comment("The share of a shock a Create: Aeronautics structure passes on through itself, against",
+                    "what terrain passes on. Terrain is a hillside and comes apart the way a hillside does.",
+                    "A build is a made thing: it has frames and skins and joints, and what those are for is",
+                    "exactly to carry a blow somewhere other than through the block next to it. A wave that",
+                    "spends its whole purse inside a hull is what turns a scrape into a build shedding its",
+                    "decks, and no aircraft that has ever landed badly has done that.",
+                    "So the wave a build passes through itself is the fraction of the one terrain would get.",
+                    "The cracks are not touched by this - a crack is the break we want, and it is priced",
+                    "separately under fractureCost. What this quiets is the crumbling around it.",
+                    "1.0 is the pre-1.9.2 behaviour, where a hull was treated as a hillside.")
+            .defineInRange("hullShare", 0.25, 0.0, 1.0);
+
+    public static final ModConfigSpec.DoubleValue HULL_MIN_SPEED = BUILDER
+            .comment("How hard a Create: Aeronautics structure has to be hit before a shock runs through it at",
+                    "all, in blocks per second. Below it the contact still cracks - the plane through the",
+                    "impact is cut, glass still goes - but nothing spreads outwards from the break.",
+                    "This is what a build is allowed to shrug off. A belly touching a treetop, a mast catching",
+                    "a mast, a landing that was merely rough: those leave a hole where they touched and a",
+                    "seam running out of it, which is what they should leave. Set it to 0 and every contact",
+                    "past the shock's own minSpeed spreads, which is 1.9.1 and is why builds sloughed.")
+            .defineInRange("hullMinSpeed", 20.0, 0.0, 1000.0);
+
+    public static final ModConfigSpec.IntValue FRACTURE_NECK = BUILDER
+            .comment("How far either side of the impact a crack may move to find a weaker place to break, in",
+                    "blocks. 0 cuts through the contact itself, which is 1.9.1.",
+                    "Things do not break where they are hit, they break where they are weakest, and on a build",
+                    "the two are rarely the same block. An obsidian mast with a wooden gondola on the end of",
+                    "it does not crack down the mast when the gondola clips a hill - the gondola shears off at",
+                    "its joint, because that ring of wood is the least material holding the most weight. This",
+                    "is how far the crack is allowed to travel along its own axis looking for that ring.")
+            .defineInRange("fractureNeck", 12, 0, 128);
+
+    public static final ModConfigSpec.IntValue FRACTURE_NECK_SPAN = BUILDER
+            .comment("How wide a window each candidate break is weighed across, in blocks either way. A plane's",
+                    "strength is what is standing in it, so this is how much of the plane is sampled to find",
+                    "that out. Wider is a truer answer and costs its square in block reads.")
+            .defineInRange("fractureNeckSpan", 6, 1, 32);
+
+    public static final ModConfigSpec.DoubleValue FRACTURE_NECK_BIAS = BUILDER
+            .comment("What a candidate break pays for every block it sits away from the impact, as a share of",
+                    "what cutting at the impact itself would have cost. This keeps the search honest: a crack is",
+                    "still something that happened where the crash happened, and without a price on distance",
+                    "the weakest plane in the whole reach wins even when the blow landed nowhere near it.",
+                    "Raise it and cracks stay at the contact; lower it and they hunt further for the joint.")
+            .defineInRange("fractureNeckBias", 0.08, 0.0, 10.0);
 
     public static final ModConfigSpec.DoubleValue SHOCK_COST = BUILDER
             .comment("What one block's resistance costs the wave passing through it. Higher makes material",
@@ -957,7 +1004,83 @@ public final class ImpactConfig {
                     "out from under a build that was being parked. This is the difference between a hard",
                     "landing and a crash, and it is the first setting to raise if a build seems to come apart",
                     "under its own landing gear.")
-            .defineInRange("minSpeed", 14.0, 0.0, 1000.0);
+            .defineInRange("minSpeed", 28.0, 0.0, 1000.0);
+
+    public static final ModConfigSpec.BooleanValue COLLAPSE_FIT = BUILDER
+            .comment("Whether a collapse is sized to the landing that armed it rather than to reach alone.",
+                    "Without this every collapse is the same collapse: the full square of reach in every",
+                    "direction, however little of the build actually came down on anything and however",
+                    "narrowly the speed cleared minSpeed. That is a build grazing a fence post and losing a",
+                    "floor thirty blocks across, which is the single worst thing this mod has ever done.",
+                    "With it on the front is cut to whichever is smaller - what the build was measured to be",
+                    "touching, plus margin, or what the speed above minSpeed has earned by fullSpeed - and",
+                    "never smaller than minReach. A build that lands flat on a plateau still collapses across",
+                    "everything it landed on, because that is what it was touching.",
+                    "false is the pre-1.9.2 behaviour.")
+            .define("fit", true);
+
+    public static final ModConfigSpec.IntValue COLLAPSE_MARGIN = BUILDER
+            .comment("How far past the edge of what was touched a fitted collapse is allowed to run, in blocks.",
+                    "A floor does not stop being damaged exactly where the contact stopped, and the contacts",
+                    "themselves are only the ones that were reported this tick. This is the difference",
+                    "between the footprint and the crater.")
+            .defineInRange("margin", 2, 0, 64);
+
+    public static final ModConfigSpec.IntValue COLLAPSE_MIN_REACH = BUILDER
+            .comment("The smallest a fitted collapse may be cut to, in blocks either way. A collapse that",
+                    "reaches nothing is a collapse that did not happen, and a single reported contact is",
+                    "still a build putting its weight through one place.")
+            .defineInRange("minReach", 2, 0, 512);
+
+    public static final ModConfigSpec.DoubleValue COLLAPSE_FULL_SPEED = BUILDER
+            .comment("The speed at which a fitted collapse is allowed its whole reach, in blocks per second.",
+                    "Between minSpeed and this the front grows from minReach to reach, so a landing that",
+                    "barely cleared the gate takes barely anything and a fall that arrived at terminal",
+                    "velocity takes the lot. This is the whole difference between a hard landing and a crash,",
+                    "expressed as a slope rather than as a switch.")
+            .defineInRange("fullSpeed", 30.0, 0.1, 1000.0);
+
+    static {
+        BUILDER.pop();
+    }
+
+    static {
+        BUILDER.comment("Telling a build that it is now two builds.",
+                        "Sable decides what is still one structure by walking its blocks, and it walks them a",
+                        "few hundred at a time so that the walk never costs a tick. That is the right trade",
+                        "for a build losing a block to a pickaxe and the wrong one for a build losing a",
+                        "thousand blocks to a crash: the connection is severed on the first tick and noticed",
+                        "on the fortieth, and what is on the screen in between is a wreck cut clean through",
+                        "the middle, hanging together, held up by a search that has not caught up yet.",
+                        "So a build this mod has damaged is walked harder, for a few ticks, until the search",
+                        "settles. It costs what it is given and no more, and the moment the answer is in it",
+                        "costs nothing at all.")
+                .push("split");
+    }
+
+    public static final ModConfigSpec.BooleanValue RESOLVE_SPLITS = BUILDER
+            .comment("Whether a build this mod has broken is walked harder until it knows what it is.",
+                    "Turn it off and separation still happens, on Sable's own schedule, which on a wreck of",
+                    "any size is tens of seconds after the fact.")
+            .define("resolve", true);
+
+    public static final ModConfigSpec.IntValue SPLIT_ROUNDS = BUILDER
+            .comment("How many extra passes of the connectivity search a damaged build is given per tick. One",
+                    "pass is what Sable itself runs in a tick, so 24 is a build resolving about twenty-four",
+                    "times sooner. The search is self-limiting: once it has its answer the passes cost",
+                    "nothing, so this is a ceiling and not a workload.")
+            .defineInRange("rounds", 24, 0, 4096);
+
+    public static final ModConfigSpec.IntValue SPLIT_TICKS = BUILDER
+            .comment("How long a build stays on the hurried list after the last block it lost, in ticks. A",
+                    "wreck keeps coming apart for a while after the landing, and each new severance wants",
+                    "finding as promptly as the first.")
+            .defineInRange("ticks", 200, 0, 24000);
+
+    public static final ModConfigSpec.DoubleValue SPLIT_MILLIS = BUILDER
+            .comment("Ceiling on what all of this may cost per level per tick, in milliseconds. Whatever the",
+                    "round count says, the work stops here and picks up next tick.")
+            .defineInRange("millis", 3.0, 0.0, 50.0);
 
     static {
         BUILDER.pop();
@@ -1832,6 +1955,11 @@ public final class ImpactConfig {
                          int fractureScan,
                          int fractureMinRun,
                          int fractureFloor,
+                         double hullShare,
+                         double hullMinSpeed,
+                         int fractureNeck,
+                         int fractureNeckSpan,
+                         double fractureNeckBias,
                          double shockCost,
                          double shockFalloff,
                          int shockMaxPerImpact,
@@ -1848,6 +1976,14 @@ public final class ImpactConfig {
                          DebrisMode debrisMode,
                          int maxSettlePerTick,
                          double collapseMinSpeed,
+                         boolean collapseFit,
+                         int collapseMargin,
+                         int collapseMinReach,
+                         double collapseFullSpeed,
+                         boolean resolveSplits,
+                         int splitRounds,
+                         int splitTicks,
+                         double splitMillis,
                          boolean bearing,
                          double bearingBlockWeight,
                          double bearingPressureScale,
@@ -1994,6 +2130,11 @@ public final class ImpactConfig {
                     FRACTURE_SCAN.get(),
                     FRACTURE_MIN_RUN.get(),
                     FRACTURE_FLOOR.get(),
+                    HULL_SHARE.get(),
+                    HULL_MIN_SPEED.get(),
+                    FRACTURE_NECK.get(),
+                    FRACTURE_NECK_SPAN.get(),
+                    FRACTURE_NECK_BIAS.get(),
                     SHOCK_COST.get(),
                     SHOCK_FALLOFF.get(),
                     SHOCK_MAX_PER_IMPACT.get(),
@@ -2010,6 +2151,14 @@ public final class ImpactConfig {
                     DEBRIS_MODE.get(),
                     MAX_SETTLE_PER_TICK.get(),
                     COLLAPSE_MIN_SPEED.get(),
+                    COLLAPSE_FIT.get(),
+                    COLLAPSE_MARGIN.get(),
+                    COLLAPSE_MIN_REACH.get(),
+                    COLLAPSE_FULL_SPEED.get(),
+                    RESOLVE_SPLITS.get(),
+                    SPLIT_ROUNDS.get(),
+                    SPLIT_TICKS.get(),
+                    SPLIT_MILLIS.get(),
                     BEARING.get(),
                     BEARING_BLOCK_WEIGHT.get(),
                     BEARING_PRESSURE_SCALE.get(),

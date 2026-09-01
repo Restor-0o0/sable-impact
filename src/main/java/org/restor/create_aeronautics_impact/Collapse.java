@@ -45,6 +45,16 @@ import java.util.WeakHashMap;
  * skips the rooms and takes the courses it finds, which is why a ship loses its keel and its decks in that
  * order rather than losing the hold it does not have.
  *
+ * <p>What it is <em>not</em> allowed to be is the same size every time. Until 1.9.2 a front took the whole of
+ * {@code reach} in every direction whatever had happened, so a build that clipped a fence post lost a floor
+ * thirty blocks across, and a belly that grazed a treetop shed its decks. A collapse is a build failing under
+ * its own weight, and how much of it fails depends on how much of it was bearing on something and how hard it
+ * arrived. So the contacts of the landing are measured as they come in - they are all reported before the
+ * front takes its first step - and the front is cut to whichever is smaller: the footprint that actually
+ * touched, plus a margin, or what the speed above {@code minSpeed} has earned. A build that comes down flat
+ * across a plateau still loses everything it came down on. A build that catches one mast on one tree loses
+ * the mast.
+ *
  * <p><b>Runs from the level tick, after the physics step</b>, for the same reason breaking does: it writes
  * blocks, and writing a block re-bakes colliders through the library the step is holding.
  */
@@ -63,6 +73,15 @@ public final class Collapse {
     private final Direction along;
 
     private final double impactVelocity;
+
+    /** The footprint of the landing, in the front's own two axes, relative to the contact that armed it. */
+    private int minA;
+    private int maxA;
+    private int minB;
+    private int maxB;
+
+    /** The hardest contact this landing reported, which is what the front's size is earned with. */
+    private double hardest;
 
     /** The next ring of columns to fail, as a distance from the contact. */
     private int ring;
@@ -85,6 +104,7 @@ public final class Collapse {
         this.subLevel = subLevel;
         this.origin = origin.immutable();
         this.impactVelocity = impactVelocity;
+        this.hardest = Math.abs(impactVelocity);
         this.down = down;
         final Direction.Axis vertical = down.getAxis();
         this.across = vertical == Direction.Axis.X ? Direction.UP : Direction.EAST;
@@ -100,6 +120,10 @@ public final class Collapse {
      * <p>One front at a time per build. A landing reports contacts in the hundreds and they are all the same
      * landing; and the cooldown afterwards is what makes the storeys separate events rather than one long
      * grind, since the build is still touching what it fell on the whole time it is falling into it.
+     *
+     * <p>The hundreds are not thrown away, though. Every one of them that is also on the underside widens the
+     * front that is already running, which is where the fitted size comes from: a landing is as wide as the
+     * part of the build that landed.
      */
     public static void impact(final ServerLevel level,
                               @Nullable final ServerSubLevel subLevel,
@@ -115,6 +139,9 @@ public final class Collapse {
                 RUNNING.computeIfAbsent(level, ignored -> new HashMap<>());
         final Collapse running = builds.get(subLevel);
         if (running != null && (!running.finished(tuning) || level.getGameTime() < running.idleUntil)) {
+            if (underside(subLevel, plotPos, running.down)) {
+                running.widen(plotPos, impactVelocity);
+            }
             return;
         }
 
@@ -123,6 +150,55 @@ public final class Collapse {
             return;
         }
         builds.put(subLevel, new Collapse(subLevel, plotPos, down, impactVelocity));
+    }
+
+    /**
+     * Adds one more contact of the same landing to the footprint the front is sized against.
+     *
+     * <p>Measured in the front's own two axes so it is the same square the columns are laid out in, and
+     * monotone in both directions, so a front only ever grows while its landing is still being reported.
+     */
+    private void widen(final BlockPos plotPos, final double impactVelocity) {
+        final int dx = plotPos.getX() - this.origin.getX();
+        final int dy = plotPos.getY() - this.origin.getY();
+        final int dz = plotPos.getZ() - this.origin.getZ();
+        final int a = this.across.getStepX() * dx + this.across.getStepY() * dy + this.across.getStepZ() * dz;
+        final int b = this.along.getStepX() * dx + this.along.getStepY() * dy + this.along.getStepZ() * dz;
+
+        this.minA = Math.min(this.minA, a);
+        this.maxA = Math.max(this.maxA, a);
+        this.minB = Math.min(this.minB, b);
+        this.maxB = Math.max(this.maxB, b);
+        this.hardest = Math.max(this.hardest, Math.abs(impactVelocity));
+    }
+
+    /**
+     * How far this particular front is allowed to run, which is not the same as how far a front may.
+     *
+     * <p>Two answers, and the smaller of them wins. The first is what was touched: the corner of the measured
+     * footprint, plus {@code margin} for the contacts that were not reported and the damage that does not stop
+     * exactly where the contact did. The second is what was earned: nothing above {@code minReach} at the
+     * speed the gate opened at, the whole of {@code reach} at {@code fullSpeed}, and a straight line between.
+     *
+     * <p>Taking the smaller is what makes a graze a graze. A build can land flat and fast and lose everything
+     * it landed on, or touch one place at terminal velocity and lose that one place, but nothing gets to lose
+     * a floor it was never over.
+     */
+    private int reach(final ImpactConfig.Tuning tuning) {
+        if (!tuning.collapseFit()) {
+            return tuning.collapseReach();
+        }
+
+        final int touched = Math.max(Math.max(-this.minA, this.maxA), Math.max(-this.minB, this.maxB));
+        final int wide = touched + tuning.collapseMargin();
+
+        final double span = Math.max(1.0e-3, tuning.collapseFullSpeed() - tuning.collapseMinSpeed());
+        final double share = Math.min(1.0, Math.max(0.0, (this.hardest - tuning.collapseMinSpeed()) / span));
+        final int hard = (int) Math.round(tuning.collapseMinReach()
+                + share * (tuning.collapseReach() - tuning.collapseMinReach()));
+
+        final int floor = Math.min(tuning.collapseMinReach(), tuning.collapseReach());
+        return Math.max(floor, Math.min(tuning.collapseReach(), Math.min(wide, hard)));
     }
 
     /**
@@ -206,7 +282,7 @@ public final class Collapse {
     }
 
     private boolean finished(final ImpactConfig.Tuning tuning) {
-        return this.ring > tuning.collapseReach();
+        return this.ring > reach(tuning);
     }
 
     /** Walks the front out by this tick's share of rings, whole rings at a time. */
@@ -291,7 +367,7 @@ public final class Collapse {
                        final int distance,
                        final ImpactConfig.Tuning tuning) {
         final int bite = Math.max(1, (int) Math.round(
-                tuning.collapseBite() * (1.0 - (double) distance / Math.max(1, tuning.collapseReach()))));
+                tuning.collapseBite() * (1.0 - (double) distance / Math.max(1, reach(tuning)))));
 
         this.cursor.set(this.origin);
         this.cursor.move(this.across, a);
