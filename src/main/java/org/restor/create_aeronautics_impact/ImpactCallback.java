@@ -178,7 +178,7 @@ public final class ImpactCallback implements BlockSubLevelCollisionCallback {
         // that arrived at sixty metres a second is stopped by the time the break pass sees it.
         final double kinetic = ImpactResolver.shockKinetic(
                 massOf(otherSubLevel) + (hitSubLevel == null ? 0.0 : massOf(hitSubLevel)),
-                impactVelocity, tuning.shockKineticScale());
+                impactVelocity, tuning.shockKineticScale(), tuning.shockMinSpeed());
         final int bodyId = otherSubLevel.getRuntimeId();
 
         final double hullBacking = tuning.hullBackingWeight();

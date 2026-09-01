@@ -10,9 +10,12 @@ import org.junit.jupiter.api.Test;
 final class ShockWaveTest {
 
     private static final double MIN_OVERSHOOT = 2.0;
-    private static final double SCALE = 8.0;
+    private static final double SCALE = 3.0;
     private static final double COST = 1.0;
     private static final double FALLOFF = 0.98;
+
+    /** The shipped speed below which nothing is a crash at all. */
+    private static final double FLOOR = 8.0;
 
     /** Roughly what the live numbers make of these once the resistance curve has been applied. */
     private static final double WOOD = 1.025;
@@ -64,7 +67,7 @@ final class ShockWaveTest {
 
     /** How much of itself a build of this many blocks loses, capped at all of it. */
     private static int lost(final double mass, final double speed, final int blocks) {
-        return Math.min(blocks, spread(ImpactResolver.shockKinetic(mass, speed, 1.0), STONE));
+        return Math.min(blocks, spread(ImpactResolver.shockKinetic(mass, speed, 1.0, FLOOR), STONE));
     }
 
     @Test
@@ -110,15 +113,15 @@ final class ShockWaveTest {
     @Test
     @DisplayName("what a crash has to spend is the body's, not the contact's")
     void aBattleshipIsNotABoulder() {
-        assertTrue(ImpactResolver.shockKinetic(SHIP, 60.0, 1.0)
-                > ImpactResolver.shockKinetic(BOULDER, 60.0, 1.0));
+        assertTrue(ImpactResolver.shockKinetic(SHIP, 60.0, 1.0, FLOOR)
+                > ImpactResolver.shockKinetic(BOULDER, 60.0, 1.0, FLOOR));
     }
 
     @Test
     @DisplayName("speed counts twice, the way it does in a real crash")
     void twiceAsFastIsFourTimesTheCrash() {
-        assertEquals(4.0 * ImpactResolver.shockKinetic(SHIP, 30.0, 1.0),
-                ImpactResolver.shockKinetic(SHIP, 60.0, 1.0), 1.0e-6);
+        assertEquals(4.0 * ImpactResolver.shockKinetic(SHIP, FLOOR + 26.0, 1.0, FLOOR),
+                ImpactResolver.shockKinetic(SHIP, FLOOR + 52.0, 1.0, FLOOR), 1.0e-6);
     }
 
     @Test
@@ -130,13 +133,30 @@ final class ShockWaveTest {
     }
 
     @Test
+    @DisplayName("a build set down gently is not a crash, however heavy it is")
+    void weightAlonelsNotACrash() {
+        assertEquals(0.0, ImpactResolver.shockKinetic(SHIP, FLOOR, 1.0, FLOOR));
+        assertEquals(0.0, ImpactResolver.shockKinetic(SHIP, 3.0, 1.0, FLOOR));
+        assertTrue(ImpactResolver.shockKinetic(SHIP, FLOOR + 0.5, 1.0, FLOOR) > 0.0);
+    }
+
+    @Test
+    @DisplayName("what a crash costs is measured from the floor, not from standing still")
+    void speedCountsFromWhereItStartsMattering() {
+        assertEquals(ImpactResolver.shockKinetic(SHIP, 10.0, 1.0, 0.0),
+                ImpactResolver.shockKinetic(SHIP, 18.0, 1.0, FLOOR), 1.0e-6);
+        assertTrue(ImpactResolver.shockKinetic(SHIP, 12.0, 1.0, FLOOR)
+                < ImpactResolver.shockKinetic(SHIP, 12.0, 1.0, 0.0) / 4.0);
+    }
+
+    @Test
     @DisplayName("nothing sensible comes of nothing")
     void massAndSpeedHaveToBeReal() {
-        assertEquals(0.0, ImpactResolver.shockKinetic(0.0, 60.0, 1.0));
-        assertEquals(0.0, ImpactResolver.shockKinetic(SHIP, 0.0, 1.0));
-        assertEquals(0.0, ImpactResolver.shockKinetic(Double.POSITIVE_INFINITY, 60.0, 1.0));
-        assertEquals(0.0, ImpactResolver.shockKinetic(SHIP, Double.NaN, 1.0));
-        assertEquals(0.0, ImpactResolver.shockKinetic(SHIP, 60.0, 0.0));
+        assertEquals(0.0, ImpactResolver.shockKinetic(0.0, 60.0, 1.0, FLOOR));
+        assertEquals(0.0, ImpactResolver.shockKinetic(SHIP, 0.0, 1.0, FLOOR));
+        assertEquals(0.0, ImpactResolver.shockKinetic(Double.POSITIVE_INFINITY, 60.0, 1.0, FLOOR));
+        assertEquals(0.0, ImpactResolver.shockKinetic(SHIP, Double.NaN, 1.0, FLOOR));
+        assertEquals(0.0, ImpactResolver.shockKinetic(SHIP, 60.0, 0.0, FLOOR));
     }
 
     @Test

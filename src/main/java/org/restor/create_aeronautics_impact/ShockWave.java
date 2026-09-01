@@ -3,6 +3,7 @@ package org.restor.create_aeronautics_impact;
 import it.unimi.dsi.fastutil.doubles.DoubleArrayFIFOQueue;
 import it.unimi.dsi.fastutil.ints.Int2DoubleMap;
 import it.unimi.dsi.fastutil.ints.Int2DoubleOpenHashMap;
+import it.unimi.dsi.fastutil.ints.IntOpenHashSet;
 import it.unimi.dsi.fastutil.longs.LongArrayFIFOQueue;
 import it.unimi.dsi.fastutil.longs.LongOpenHashSet;
 import net.minecraft.core.BlockPos;
@@ -34,9 +35,15 @@ import java.util.WeakHashMap;
  * larger answer wins, and the kinetic one is drawn from a reservoir refilled once per body per tick, so a
  * landing that reports six hundred contacts is still one crash.
  *
- * <p>The wave walks whatever is touching, in the grid it started in - a contraption's plot is surrounded by
+ * <p>That energy buys two different pictures, and a crash is both of them. A <b>wave</b> spreads out of the
+ * impact in every direction and eats what it can reach, which is what happens to the part that hit. A
+ * <b>crack</b> is one block wide and runs clean through the build, which is what happens to the rest of it -
+ * things this size come apart along a line rather than dissolving, and the half that separates is still a
+ * half rather than a cloud. {@code fractureShare} is how the crash is divided between the two.
+ *
+ * <p>The walk covers whatever is touching, in the grid it started in - a contraption's plot is surrounded by
  * empty plotgrid, so a wave that begins in a hull cannot leave it, and one that begins in terrain cannot
- * climb into a hull. A wave too big for one tick is put down and picked up on the next, which is both what
+ * climb into a hull. Anything too big for one tick is put down and picked up on the next, which is both what
  * keeps the tick honest and what makes a large wreck come apart over a second rather than in a single frame.
  *
  * <p><b>Runs from the level tick, after the physics step</b>, for the same reason breaking does: it writes
@@ -55,11 +62,20 @@ public final class ShockWave {
     /** What each body has left to spend this tick, so its hundreds of contacts share one crash. */
     private static final Int2DoubleMap RESERVOIR = new Int2DoubleOpenHashMap();
 
+    /** Which bodies have already been cracked this tick. A build comes apart in pieces, not per contact. */
+    private static final IntOpenHashSet FRACTURED = new IntOpenHashSet();
+
     private final ServerLevel level;
     private final Vector3d worldImpact;
     private final double impactVelocity;
     private final boolean contraption;
     private final double toughness;
+
+    /** The axis a crack is cut across, or null for an ordinary wave spreading every way at once. */
+    private final @Nullable Direction.Axis crack;
+
+    /** Where on that axis the cut started, which is what {@code fractureWander} is measured against. */
+    private final int plane;
 
     private final LongOpenHashSet seen = new LongOpenHashSet();
     private final LongArrayFIFOQueue frontier = new LongArrayFIFOQueue();
@@ -73,15 +89,19 @@ public final class ShockWave {
     private int broken;
 
     private ShockWave(final ServerLevel level,
+                      final BlockPos origin,
                       final Vector3d worldImpact,
                       final double impactVelocity,
                       final boolean contraption,
+                      final @Nullable Direction.Axis crack,
                       final ImpactConfig.Tuning tuning) {
         this.level = level;
         this.worldImpact = new Vector3d(worldImpact);
         this.impactVelocity = impactVelocity;
         this.contraption = contraption;
         this.toughness = contraption ? tuning.contraptionBlockToughness() : 1.0;
+        this.crack = crack;
+        this.plane = crack == null ? 0 : origin.get(crack);
     }
 
     /**
@@ -109,23 +129,90 @@ public final class ShockWave {
         }
         rollTick(level.getGameTime());
 
-        // The gate is the contact's, even when the energy is the body's: a battleship resting its weight on
-        // a wall is carrying just as much as one flying into it, and only one of those is a crash.
-        if (overshoot <= tuning.shockMinOvershoot()) {
+        // Two gates, and they answer different questions. The overshoot asks whether the hit was hard for
+        // what it hit - a battleship resting its weight on a wall is carrying just as much energy as one
+        // flying into it, and only one of those is a crash. The speed asks whether anything happened at all,
+        // and is the one that lets a build be landed and moved: a ship weighs tonnes, so at walking pace it
+        // is already carrying enough energy for every other number here to level it.
+        if (overshoot <= tuning.shockMinOvershoot() || Math.abs(impactVelocity) < tuning.shockMinSpeed()) {
             return 0;
         }
+        if (brokenThisTick >= tuning.shockMaxPerTick()) {
+            return 0;
+        }
+
+        int broken = cleave(level, origin, worldImpact, impactVelocity,
+                contraption, bodyId, kinetic, tuning, deadline);
 
         final double scale = contraption ? tuning.hullShockScale() : tuning.terrainShockScale();
         final double energy = Math.max(
                 ImpactResolver.shockEnergy(overshoot, tuning.shockMinOvershoot(), scale),
                 draw(bodyId, contraption, kinetic, tuning.shockContactShare()));
-        if (energy <= 0.0 || brokenThisTick >= tuning.shockMaxPerTick()) {
+        if (energy <= 0.0) {
+            return broken;
+        }
+        return broken + start(level, origin, worldImpact, impactVelocity,
+                contraption, null, energy, tuning, deadline);
+    }
+
+    /**
+     * Opens this build's cracks, if it has not already been cracked this tick.
+     *
+     * <p>Once per body rather than once per contact, and that is the whole point of it. A landing reports
+     * contacts in the hundreds and they are all the same crash; a hull cut in three hundred places is not in
+     * pieces, it is gravel. Two cuts is a build in three parts, which is what a thing this size does when it
+     * comes down.
+     *
+     * <p>Contraptions only. A crack through terrain is a canyon, and nobody asked for a canyon.
+     */
+    private static int cleave(final ServerLevel level,
+                              final BlockPos origin,
+                              final Vector3d worldImpact,
+                              final double impactVelocity,
+                              final boolean contraption,
+                              final int bodyId,
+                              final double kinetic,
+                              final ImpactConfig.Tuning tuning,
+                              final long deadline) {
+        final int count = Math.min(tuning.fractureCount(), Direction.Axis.values().length);
+        if (!contraption || count <= 0 || tuning.fractureShare() <= 0.0
+                || !FRACTURED.add(reservoirKey(bodyId, true))) {
             return 0;
         }
 
-        final ShockWave wave = new ShockWave(level, worldImpact, impactVelocity, contraption, tuning);
+        final double total = draw(bodyId, contraption, kinetic, tuning.fractureShare());
+        if (total <= 0.0) {
+            return 0;
+        }
+
+        // A different axis each time, so two cuts are two pieces rather than the same cut made twice.
+        final int first = level.random.nextInt(Direction.Axis.values().length);
+        int broken = 0;
+        for (int cut = 0; cut < count; cut++) {
+            broken += start(level, origin, worldImpact, impactVelocity, true,
+                    Direction.Axis.values()[(first + cut) % Direction.Axis.values().length],
+                    total / count, tuning, deadline);
+        }
+        return broken;
+    }
+
+    /** Sets one walk going from the block that broke, and parks it if it cannot finish inside the tick. */
+    private static int start(final ServerLevel level,
+                             final BlockPos origin,
+                             final Vector3d worldImpact,
+                             final double impactVelocity,
+                             final boolean contraption,
+                             final @Nullable Direction.Axis crack,
+                             final double energy,
+                             final ImpactConfig.Tuning tuning,
+                             final long deadline) {
+        if (energy <= 0.0 || brokenThisTick >= tuning.shockMaxPerTick()) {
+            return 0;
+        }
+        final ShockWave wave = new ShockWave(level, origin, worldImpact, impactVelocity,
+                contraption, crack, tuning);
         wave.budget = energy;
-        wave.seen.add(origin.asLong());
+        wave.seen.add(wave.key(origin));
         wave.frontier.enqueue(origin.asLong());
         wave.distances.enqueue(1.0);
         return wave.run(tuning, deadline) ? wave.broken : park(level, wave);
@@ -185,11 +272,15 @@ public final class ShockWave {
         if (kinetic <= 0.0) {
             return 0.0;
         }
-        final int key = bodyId * 2 + (contraption ? 1 : 0);
+        final int key = reservoirKey(bodyId, contraption);
         final double left = RESERVOIR.getOrDefault(key, kinetic);
         final double taken = left * Math.clamp(share, 0.0, 1.0);
         RESERVOIR.put(key, left - taken);
         return taken;
+    }
+
+    private static int reservoirKey(final int bodyId, final boolean contraption) {
+        return bodyId * 2 + (contraption ? 1 : 0);
     }
 
     /**
@@ -209,18 +300,23 @@ public final class ShockWave {
     }
 
     /**
-     * The wave proper: breadth first out of its frontier, every block it destroys taken out of one budget
+     * The walk proper: breadth first out of its frontier, every block it destroys taken out of one budget
      * they all share, until it can no longer afford the next.
      *
      * <p>Breadth first is what makes the shared budget behave: it spends on what is nearest the impact first
      * and only reaches further once that is gone, which is both the right picture and the reason the cost of
      * distance below is enough to bound it.
      *
-     * @return whether the wave is finished, as opposed to merely out of time or out of tick.
+     * <p>A crack is the same walk with two directions taken away from it and a little slop allowed on the
+     * third, which is all a fracture surface is.
+     *
+     * @return whether the walk is finished, as opposed to merely out of time or out of tick.
      */
     private boolean run(final ImpactConfig.Tuning tuning, final long deadline) {
         final int perImpact = tuning.shockMaxPerImpact();
-        final double falloff = Math.clamp(tuning.shockFalloff(), 0.1, 1.0);
+        final double falloff = Math.clamp(
+                this.crack == null ? tuning.shockFalloff() : tuning.fractureFalloff(), 0.1, 1.0);
+        final int wander = this.crack == null ? 0 : tuning.fractureWander();
 
         while (!this.frontier.isEmpty()) {
             if (this.broken >= perImpact || this.budget <= 0.0) {
@@ -235,9 +331,14 @@ public final class ShockWave {
             final double further = distance / falloff;
 
             for (final Direction direction : Direction.values()) {
+                if (this.crack != null && direction.getAxis() == this.crack) {
+                    continue;
+                }
                 this.cursor.set(BlockPos.getX(from), BlockPos.getY(from), BlockPos.getZ(from));
                 this.cursor.move(direction);
-                final long key = this.cursor.asLong();
+                drift(wander);
+
+                final long key = key(this.cursor);
                 if (!this.seen.add(key)) {
                     continue;
                 }
@@ -247,7 +348,7 @@ public final class ShockWave {
                 }
                 this.broken++;
                 brokenThisTick++;
-                this.frontier.enqueue(key);
+                this.frontier.enqueue(this.cursor.asLong());
                 this.distances.enqueue(further);
 
                 if (this.broken >= perImpact || this.budget <= 0.0) {
@@ -263,13 +364,52 @@ public final class ShockWave {
     }
 
     /**
-     * One block met by the wave: destroyed and the remainder returned, or left standing and the branch ended.
+     * Lets a crack step a block off its own plane, so what it leaves is a seam rather than a saw cut.
+     *
+     * <p>One block per column of the plane either way, whatever the drift, which is what keeps the cut a cut:
+     * every column the crack reaches is missing exactly one block, so nothing can be traced through it from
+     * one side to the other however the seam wanders.
+     */
+    private void drift(final int wander) {
+        if (this.crack == null || wander <= 0) {
+            return;
+        }
+        final int step = this.level.random.nextInt(3) - 1;
+        if (step == 0) {
+            return;
+        }
+        final Direction off = Direction.get(step > 0
+                ? Direction.AxisDirection.POSITIVE
+                : Direction.AxisDirection.NEGATIVE, this.crack);
+        this.cursor.move(off);
+        if (Math.abs(this.cursor.get(this.crack) - this.plane) > wander) {
+            this.cursor.move(off.getOpposite());
+        }
+    }
+
+    /**
+     * What tells two visits apart. For a wave that is the block; for a crack it is the column of the plane,
+     * so a seam that has already wandered past a column does not come back for it at another depth.
+     */
+    private long key(final BlockPos pos) {
+        if (this.crack == null) {
+            return pos.asLong();
+        }
+        return switch (this.crack) {
+            case X -> BlockPos.asLong(this.plane, pos.getY(), pos.getZ());
+            case Y -> BlockPos.asLong(pos.getX(), this.plane, pos.getZ());
+            case Z -> BlockPos.asLong(pos.getX(), pos.getY(), this.plane);
+        };
+    }
+
+    /**
+     * One block met by the walk: destroyed and the remainder returned, or left standing and the branch ended.
      *
      * <p>Anything the hull would have gone through rather than hit - undergrowth, water - ends the branch
      * without being touched. A shock is carried by what is solid; letting it cross a lake would have one
      * contact on a shoreline take the far bank as well.
      *
-     * @return whether the block was destroyed, and so whether the wave carries on through it.
+     * @return whether the block was destroyed, and so whether the walk carries on through it.
      */
     private boolean strike(final BlockPos pos, final double distance, final ImpactConfig.Tuning tuning) {
         final BlockState state = stateIfLoaded(pos);
@@ -314,6 +454,7 @@ public final class ShockWave {
             tick = now;
             brokenThisTick = 0;
             RESERVOIR.clear();
+            FRACTURED.clear();
         }
     }
 }

@@ -1,6 +1,7 @@
 package org.restor.create_aeronautics_impact;
 
 import net.minecraft.core.BlockPos;
+import net.minecraft.core.Direction;
 import net.minecraft.server.level.ServerLevel;
 import net.minecraft.world.entity.item.FallingBlockEntity;
 import net.minecraft.world.item.ItemStack;
@@ -18,6 +19,13 @@ import org.joml.Vector3d;
  * every player in range; a hull ploughing terrain produces hundreds of both per tick. Both are therefore
  * rationed per tick: the first handful of breaks look expensive, the rest of them are quiet, and an impact
  * that levels a hillside costs about what an impact that chips it does.
+ *
+ * <p>Which leaves the great majority of a crash with nothing to show for itself, and a wreck that mostly
+ * deletes itself is the wrong picture twice over - the mass has to go somewhere, and a crater with nothing
+ * around it reads as a hole rather than as damage. So a block that does not get to fly is not thrown away:
+ * it is pushed clear of whatever broke it, dropped to the first thing solid underneath, and written back
+ * down. No entity, no ticking, nothing to send but the block change, which is why it can be done to nearly
+ * everything where throwing debris could only ever be done to a few dozen blocks a tick.
  */
 public final class BlockScatter {
 
@@ -44,13 +52,15 @@ public final class BlockScatter {
         final double speed = ImpactResolver.scatterSpeed(
                 impactVelocity, resistance, tuning.scatterVelocityScale());
 
+        final Vec3 away = escapeDirection(pos, impactPosition, level);
         if (!scatters(level, state, speed, tuning.scatterChance(), tuning)) {
-            clear(level, pos, tuning.dropItems());
+            final BlockPos room = settling(level, pos, away, state, tuning);
+            clear(level, pos, room == null && tuning.dropItems());
+            place(level, room, state, tuning);
             return;
         }
 
-        throwOut(level, FallingBlockEntity.fall(level, pos, state),
-                escapeDirection(pos, impactPosition, level), speed, tuning);
+        throwOut(level, FallingBlockEntity.fall(level, pos, state), away, speed, tuning);
     }
 
     /**
@@ -71,7 +81,11 @@ public final class BlockScatter {
                 impactVelocity, resistance, tuning.scatterVelocityScale());
 
         if (!scatters(level, state, speed, tuning.contraptionScatterChance(), tuning)) {
-            clear(level, plotPos, tuning.dropItems());
+            // The block itself is out in the plotgrid, so there is no position of its own for it to fall
+            // from - only the crash has a place in the world. It joins the heap around that instead.
+            final BlockPos room = heaping(level, worldImpactPosition, state, tuning);
+            clear(level, plotPos, room == null && tuning.dropItems());
+            place(level, room, state, tuning);
             return;
         }
 
@@ -106,6 +120,99 @@ public final class BlockScatter {
             debris.setHurtsEntities((float) tuning.debrisDamagePerBlock(), tuning.debrisDamageMax());
         }
         ((DebrisHolder) debris).create_aeronautics_impact$debris(true);
+    }
+
+    /**
+     * Where a broken terrain block comes to rest, or null if it has nowhere to go and is simply gone.
+     *
+     * <p>Pushed out of the hole first. The impact point is inside the hull, so away from it is out of the
+     * excavation, which is the one direction the block is not going to be dug out of again a tick later -
+     * and it is what puts the spoil beside the furrow the way a plough does, rather than back in it.
+     */
+    private static @Nullable BlockPos settling(final ServerLevel level,
+                                               final BlockPos pos,
+                                               final Vec3 away,
+                                               final BlockState state,
+                                               final ImpactConfig.Tuning tuning) {
+        if (tuning.settleShare() <= 0.0 || level.random.nextDouble() >= tuning.settleShare()) {
+            return null;
+        }
+        final BlockPos pushed = pos.offset(
+                (int) Math.round(away.x * 1.5),
+                (int) Math.round(away.y * 1.5),
+                (int) Math.round(away.z * 1.5));
+        return pushed.equals(pos) ? null : ground(level, pushed, state, tuning);
+    }
+
+    /**
+     * The same for a contraption's own block, which has no world position to be pushed out of and so is
+     * spread over a disc around the crash. Landing on the heap that is already there is the point: each
+     * block stops on top of the last, and what accumulates is a pile of the ship where the ship came down.
+     */
+    private static @Nullable BlockPos heaping(final ServerLevel level,
+                                              final Vector3d worldImpact,
+                                              final BlockState state,
+                                              final ImpactConfig.Tuning tuning) {
+        if (tuning.settleShare() <= 0.0 || level.random.nextDouble() >= tuning.settleShare()) {
+            return null;
+        }
+        final double spread = tuning.settleSpread();
+        return ground(level, BlockPos.containing(
+                worldImpact.x + (level.random.nextDouble() - 0.5) * 2.0 * spread,
+                worldImpact.y + 1.0,
+                worldImpact.z + (level.random.nextDouble() - 0.5) * 2.0 * spread), state, tuning);
+    }
+
+    /**
+     * Drops a block from where it was let go to the first thing solid under it, within reach.
+     *
+     * <p>Stopping at the floor rather than taking the first free position is what makes a heap a heap.
+     * Anything else fills in the overhangs and leaves wreckage standing in the air where it happened to be
+     * when it stopped being part of something.
+     *
+     * <p>And a block that finds no floor at all inside its reach is not settled anywhere: it is a block that
+     * came off something in mid-air, and the honest answer to where it goes is down. Wreckage nailed to the
+     * sky at the altitude the ship broke up at is worse than wreckage that is simply missing.
+     */
+    private static @Nullable BlockPos ground(final ServerLevel level,
+                                             final BlockPos from,
+                                             final BlockState state,
+                                             final ImpactConfig.Tuning tuning) {
+        if (!open(level, from)) {
+            return null;
+        }
+        final BlockPos.MutableBlockPos cursor = from.mutable();
+        boolean landed = false;
+        for (int step = 0; step < tuning.settleDrop(); step++) {
+            cursor.move(Direction.DOWN);
+            if (!open(level, cursor)) {
+                cursor.move(Direction.UP);
+                landed = true;
+                break;
+            }
+        }
+        if (!landed && FallingBlock.isFree(level.getBlockState(cursor.below()))) {
+            return null;
+        }
+        return state.canSurvive(level, cursor) ? cursor.immutable() : null;
+    }
+
+    /** Somewhere a block could be written: inside the world, in a loaded chunk, into something that gives way. */
+    private static boolean open(final ServerLevel level, final BlockPos pos) {
+        return pos.getY() >= level.getMinBuildHeight()
+                && pos.getY() < level.getMaxBuildHeight()
+                && level.isLoaded(pos)
+                && level.getBlockState(pos).canBeReplaced();
+    }
+
+    /** Writes a settled block back, if it found anywhere at all to settle. */
+    private static void place(final ServerLevel level,
+                              final @Nullable BlockPos room,
+                              final BlockState state,
+                              final ImpactConfig.Tuning tuning) {
+        if (room != null && level.getBlockState(room).canBeReplaced()) {
+            level.setBlock(room, state, tuning.blockUpdates() ? Block.UPDATE_ALL : QUIET_PLACEMENT);
+        }
     }
 
     /**

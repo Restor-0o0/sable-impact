@@ -192,10 +192,15 @@ Every setting named here lives in the `[shock]` section of the config file.
 [shock]
 	shockBlocks = true
 	minOvershoot = 2.0
-	hullScale = 8.0
+	hullScale = 3.0
 	terrainScale = 1.5
 	kineticScale = 1.0
+	minSpeed = 8.0
 	perContactShare = 0.2
+	fractureShare = 0.6
+	fractureCount = 2
+	fractureFalloff = 0.995
+	fractureWander = 2
 	cost = 1.0
 	falloff = 0.98
 	maxBlocksPerImpact = 8192
@@ -214,6 +219,19 @@ into it, and only one of those is a crash. Ploughing a hillside, scraping a wall
 all of those break blocks, and all of them are meant to leave the rest of the build alone. Raise
 `minOvershoot` and only outright crashes propagate. Lower it towards `1` and every block broken anywhere sends
 a wave through whatever it was attached to, which is a build that sheds hull every time it brushes a tree.
+
+`minSpeed` is the second gate, and it is the important one if a build has ever folded up under you while you
+were flying it carefully. `minOvershoot` is a *ratio* - it asks whether the hit was hard for what was hit -
+and a ratio has no idea how fast anything was going. A ship is several tonnes; at walking pace it is already
+carrying more energy than a stick of dynamite, and every other number in this chapter would happily spend it.
+So below `minSpeed` nothing propagates at all, whatever the overshoot says and whatever the build weighs.
+**Setting a dirigible down, docking it, nudging it a block sideways: none of those can crack it.**
+
+It does a second job above the line as well. The crash is priced on the speed *over* `minSpeed` rather than
+on the speed, and priced quadratically, so a landing a little too fast costs a few blocks rather than
+crossing a threshold into costing hundreds. That is what to raise if things still come apart too readily at
+low speed, and it is deliberately the one number here `impactStrength` does not touch - that dial is for how
+hard crashes are, and this is the line between a crash and ordinary use.
 
 `shockBlocks = false` turns the whole chapter off. Only blocks actually in contact ever break then, which is
 cheap, entirely predictable, and leaves a hull that hits the ground at terminal velocity looking like it was
@@ -246,6 +264,42 @@ be broken inside one tick, what you actually watch is the wreck being eaten outw
 following second. At the default `0.2` the same total arrives as several smaller waves spread along the face
 that hit, each finishing about when it started. Nothing is lost either way - what one contact leaves is
 there for the next.
+
+### Waves and cracks
+
+A wave spends its energy in every direction at once, so what it leaves is a bite taken out of the build. That
+is the right picture for the part that actually hit, and it is nothing like what happens to the rest of it.
+Things this size do not dissolve - they come apart along a line. The back half of the ship separates and goes
+its own way, still a ship.
+
+So the crash is divided between two things. `fractureShare` is how much of it goes into **cracks** instead of
+into the wave: seams one block wide that run clean through the build from the impact, cutting it into pieces
+rather than eating it. The rest still goes to the ordinary wave. Together they are the crash - a wrecked,
+cratered end where it came down, and the rest of the hull in a couple of large pieces.
+
+`fractureCount` is how many cracks one crash may open, and they are opened **once per build per tick**, by
+the first contact hard enough to earn them. Not once per contact: a landing reports contacts in the hundreds
+and they are all the same crash, and a hull cut in three hundred places is not in pieces, it is gravel. Two
+cuts is a build in three parts. Each crack takes a different axis, so two cuts really are two pieces rather
+than the same cut made twice.
+
+`fractureWander` is how far a crack may drift off the flat plane it started on. At `0` a build is cut as
+though by a saw, which is legible and looks like nothing that has ever broken; at the default the seam
+wanders a block at a time and comes out ragged. It costs nothing either way - a crack removes exactly one
+block per column of its plane however much it wanders, which is also what guarantees the cut is a cut and not
+a decoration.
+
+`fractureFalloff` is the crack's own version of `falloff` below, and it is set much closer to `1` because the
+two want opposite things: a wave has to be stopped from reaching across the map, and a crack is no use at all
+unless it reaches the far side of the build.
+
+Cracks are for contraptions only. A crack through terrain is a canyon.
+
+One thing this cannot do on its own: whether a piece that has been cut free then *flies off* as a body of its
+own is Sable's decision, not this mod's. All a crack does is make sure nothing is still holding the piece on.
+
+Set `fractureShare` or `fractureCount` to `0` for the old behaviour - waves only, and the energy that would
+have gone into cracks handed back to them.
 
 ### How far it travels
 
@@ -304,11 +358,14 @@ Every setting named here lives in the `[debris]` section of the config file.
 
 ```toml
 [debris]
-	scatterChance = 0.5
-	contraptionScatterChance = 0.85
+	scatterChance = 0.25
+	contraptionScatterChance = 0.3
+	settleShare = 0.85
+	settleDrop = 6
+	settleSpread = 4
 	maxScatterPerTick = 96
-	scatterVelocityScale = 0.25
-	scatterUpwardKick = 0.15
+	scatterVelocityScale = 0.12
+	scatterUpwardKick = 0.08
 	landingSearch = 2
 	landingNeedsFloor = true
 	lifetimeTicks = 200
@@ -317,26 +374,48 @@ Every setting named here lives in the `[debris]` section of the config file.
 	damageMax = 40
 ```
 
-### How many blocks fly
+### What becomes of a broken block
 
-A broken block has two possible ends: it is thrown as a piece of debris, or it is simply gone. Three
-settings decide which, and they are asked in this order.
+A broken block has three possible ends, asked in this order: it is **thrown** as a piece of debris, it
+**settles** somewhere near where it broke, or it is gone.
 
-**`scatterChance`** — the fraction of broken **terrain** blocks that are thrown. `1.0` throws everything the
-per-tick cap can still afford, which is what to set if a crater should be ringed by what came out of it. `0`
-turns terrain debris off and leaves clean holes.
+Only the first of those costs anything real. Thrown debris is a falling block entity — it ticks, it falls, it
+writes a block back, and every client in range is told about it — so it is rationed hard and only ever a few
+dozen blocks a tick. Settling is a block change and nothing else, which is why nearly everything can do it.
+
+**`scatterChance`** — the fraction of broken **terrain** blocks that are thrown. `0` turns terrain debris off.
 
 **`contraptionScatterChance`** — the same fraction for a **contraption's own** blocks, and the reason the two
 are separate settings. They are not the same wish. A hillside that keeps its rubble is scenery, and there is
-an enormous amount of it; a ship shedding its hull is the thing the player is actually watching, and there
-are far fewer of those blocks. A piece of hull that vanishes reads as the mod failing to do anything, so this
-one is set higher by default and is the one to raise first.
+an enormous amount of it; a ship shedding its hull is the thing the player is actually watching. Both are
+kept well under `1` all the same: every block that flies is a block leaving the wreck, and a wreck that
+throws all of itself is a fountain rather than a crash. What is wanted is a few pieces turning through the
+air over a heap that is mostly still there.
 
-**`maxScatterPerTick`** — the hard cap, and the number that keeps the two above from being a server killer. A
-hull ploughing a hillside breaks blocks by the hundred, and each one turned into debris is an entity that has
-to fall, land, write a block back and be sent to every client in range. Blocks past the cap still break —
-they just vanish rather than fly. Raise the chances *and* this together, or the chances alone will do very
-little.
+**`settleShare`** — the fraction of everything that did *not* fly which is put back down instead of vanishing,
+and the setting that decides whether a crash leaves wreckage or leaves a hole. A settling block is pushed
+clear of whatever broke it, falls to the first solid thing under it within `settleDrop`, and is written
+there. At the default most of a ruined build is still lying where it came down, and terrain a hull ploughed
+through is piled beside the furrow rather than deleted. `0` restores the old behaviour: a clean hole and
+nothing to show for it.
+
+A block that finds no floor at all within reach does not settle — a hull that comes apart in mid-air has
+nothing under it, and wreckage nailed to the sky at the altitude the ship broke up at is worse than wreckage
+that is simply missing. Only the pieces that were *thrown* survive a breakup with nothing beneath it, which
+is what they are for.
+
+**`settleDrop`** — how far a settling block may fall looking for a floor. It is the depth of hole it is
+willing to fill, not a distance it is thrown. Low leaves wreckage perched where it broke; high has a hull
+broken over a ravine posting its blocks to the bottom of it.
+
+**`settleSpread`** — how wide the heap of a *contraption's* settled blocks is. A hull's blocks live out in the
+plotgrid and have no position of their own in the world — only the crash does — so unlike terrain they are
+spread over a disc around the impact. Too small and a ship comes down as a tower of itself; too large and the
+wreck is a thin film over the landscape rather than a pile.
+
+**`maxScatterPerTick`** — the hard cap on thrown debris, and the number that keeps the two chances above from
+being a server killer. Blocks past the cap are not lost — they fall through to settling like any other block
+that did not fly.
 
 Two kinds of block are never thrown, whatever these are set to: blocks with a block entity — a chest thrown
 as debris would quietly empty itself — and anything holding a fluid.
@@ -397,7 +476,7 @@ In order of how much they save:
 | Change | Effect |
 |---|---|
 | `maxScatterPerTick` down | The one real limit. Everything else only changes what is competing for these slots. |
-| `contraptionScatterChance` down | Fewer hull pieces. Keep this above `scatterChance`; it is the debris that is actually being looked at. |
+| `contraptionScatterChance` down | Fewer hull pieces flying. What they were going to cost is not saved by `settleShare` — a settled block is just a block change. |
 | `landingSearch = 0` | Drops the search entirely. Wreckage goes back to disappearing when it lands somewhere occupied. |
 | `dropWhenLost = false` | No items from failed landings. Worth it on a server where a crash site turns into a carpet of drops. |
 | `lifetimeTicks` down | Fewer entities alive at once when debris is being thrown a long way. |
@@ -455,10 +534,15 @@ Section `[shock]`. See [Shock](#shock-when-an-impact-is-felt-past-the-block-it-b
 |---|---|---|
 | `shockBlocks` | `true` | Whether an impact is felt past the block it broke at all. |
 | `minOvershoot` | `2.0` | How far past a block's break speed an impact has to be before it sends a shock, as a ratio. |
-| `hullScale` | `8.0` | Contact-side energy a contraption's own blocks pass on per unit of overshoot past `minOvershoot`. Decides the crashes too small for kinetic energy to matter. |
+| `hullScale` | `3.0` | Contact-side energy a contraption's own blocks pass on per unit of overshoot past `minOvershoot`. Decides the crashes too small for kinetic energy to matter. Counted per contact, so this is the one to lower if a build dissolves. |
 | `terrainScale` | `1.5` | The same for the world's own blocks. Kept low: a wave that keeps going through terrain is a tunnel. |
 | `kineticScale` | `1.0` | Energy per kilojoule the striking body is carrying. The main dial for how thoroughly a build comes apart. |
+| `minSpeed` | `8.0` | The speed (m/s) below which nothing is a crash and no shock is sent, whatever was hit. The guard that lets a build be landed and moved. Not touched by `impactStrength`. |
 | `perContactShare` | `0.2` | The largest share of a crash's remaining energy one contact may spend. Low spreads the damage along the face that hit; `1.0` gives it all to one point. |
+| `fractureShare` | `0.6` | The share of a crash spent cutting the build into pieces rather than eating a hole in it. `0` is waves only. |
+| `fractureCount` | `2` | How many cracks one crash may open, once per build per tick rather than once per contact. |
+| `fractureFalloff` | `0.995` | What a crack keeps of its purchasing power per block travelled. Near `1`: a crack is no use unless it crosses the build. |
+| `fractureWander` | `2` | How far a crack may drift off its plane, in blocks. `0` cuts like a saw. |
 | `cost` | `1.0` | What one block's resistance costs the budget. Higher makes material matter more. |
 | `falloff` | `0.98` | The share of its purchasing power a wave keeps per block travelled. What bounds its reach. |
 | `maxBlocksPerImpact` | `8192` | Ceiling on blocks one shock may break. |
@@ -522,11 +606,14 @@ Everything under `[debris]`. The chapter on it is [above](#debris-what-flies-and
 
 | Option | Default | |
 |---|---|---|
-| `scatterChance` | `0.5` | Fraction of broken **terrain** blocks that fly off as debris rather than simply vanishing. |
-| `contraptionScatterChance` | `0.85` | The same for a **contraption's own** blocks. |
-| `maxScatterPerTick` | `96` | Hard cap on debris entities per level per tick. Blocks past it still break, they just vanish. |
-| `scatterVelocityScale` | `0.25` | How hard debris is thrown, relative to how far the impact overshot the block. |
-| `scatterUpwardKick` | `0.15` | A flat upward push added to every piece, so a downward hit does not drive its debris into the floor. |
+| `scatterChance` | `0.25` | Fraction of broken **terrain** blocks that fly off as debris rather than simply vanishing. |
+| `contraptionScatterChance` | `0.3` | The same for a **contraption's own** blocks. |
+| `settleShare` | `0.85` | Fraction of the blocks that did *not* fly which are put back down nearby instead of vanishing. The difference between wreckage and a hole. |
+| `settleDrop` | `6` | How far a settling block may fall looking for something to rest on. |
+| `settleSpread` | `4` | How wide the heap of a contraption's settled blocks is. Its blocks live in the plotgrid, so only the crash has a place in the world. |
+| `maxScatterPerTick` | `96` | Hard cap on debris entities per level per tick. Blocks past it fall through to settling. |
+| `scatterVelocityScale` | `0.12` | How hard debris is thrown, relative to how far the impact overshot the block. |
+| `scatterUpwardKick` | `0.08` | A flat upward push added to every piece, so a downward hit does not drive its debris into the floor. |
 | `landingSearch` | `2` | How far a piece may look for somewhere to put itself when it cannot be placed where it landed. `0` is vanilla behaviour. |
 | `landingNeedsFloor` | `true` | Whether such a spot has to have something solid under it. |
 | `lifetimeTicks` | `200` | How long a piece may stay in the air before it is made to come down wherever it is. `0` leaves only vanilla's limit. |
@@ -598,7 +685,7 @@ without opening it:
 ./gradlew build -Pbuild_variant=fast
 ```
 
-→ `create_aeronautics_impact-1.2.2-fast.jar`, listed as *Create Aeronautics Impact (Fast)*. Same mod id and
+→ `create_aeronautics_impact-1.3.0-fast.jar`, listed as *Create Aeronautics Impact (Fast)*. Same mod id and
 same version, so only one variant can be installed at a time.
 
 For a release, build every variant in one run:

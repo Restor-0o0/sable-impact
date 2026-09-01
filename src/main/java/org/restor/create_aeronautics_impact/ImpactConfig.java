@@ -452,14 +452,43 @@ public final class ImpactConfig {
             .comment("Fraction of broken terrain blocks that fly off as debris instead of simply vanishing.",
                     "1.0 throws everything the per-tick cap can afford, which is what to reach for if a crater",
                     "should be surrounded by what came out of it. 0 turns terrain debris off.")
-            .defineInRange("scatterChance", 0.5, 0.0, 1.0);
+            .defineInRange("scatterChance", 0.25, 0.0, 1.0);
 
     public static final ModConfigSpec.DoubleValue CONTRAPTION_SCATTER_CHANCE = BUILDER
             .comment("The same for a contraption's own blocks. Higher than terrain by default: a ship losing its",
                     "hull is the thing being watched, there are far fewer of these blocks than there is ground",
                     "being ploughed, and a piece of hull that vanishes reads as the mod failing to do anything",
-                    "rather than as a break.")
-            .defineInRange("contraptionScatterChance", 0.85, 0.0, 1.0);
+                    "rather than as a break.",
+                    "Kept well under 1 all the same. Every block that flies is a block travelling away from the",
+                    "wreck, and a wreck that throws all of itself is a fountain rather than a crash - what is",
+                    "wanted is a few pieces turning through the air over a heap that is mostly still there.")
+            .defineInRange("contraptionScatterChance", 0.3, 0.0, 1.0);
+
+    public static final ModConfigSpec.DoubleValue SETTLE_SHARE = BUILDER
+            .comment("Fraction of the blocks that did not fly which are put back down near where they broke",
+                    "instead of vanishing. This is what decides whether a crash leaves wreckage or leaves a",
+                    "hole. A block that settles is pushed clear of what broke it, falls to the first thing",
+                    "solid under it within settleDrop, and is written there - no entity, no ticking, no",
+                    "physics, which is why this can be turned up to where throwing debris never could.",
+                    "At the default most of a ruined build is still lying where it came down, and terrain a",
+                    "hull ploughed through is piled beside the furrow rather than deleted. 0 restores the old",
+                    "behaviour of a clean hole and nothing to show for it.")
+            .defineInRange("settleShare", 0.85, 0.0, 1.0);
+
+    public static final ModConfigSpec.IntValue SETTLE_DROP = BUILDER
+            .comment("How far a settling block may fall looking for something to rest on, in blocks. It stops at",
+                    "the first spot that has something solid beneath it, so this is the depth of the hole it is",
+                    "willing to fill rather than a distance it is thrown. Low leaves wreckage perched where it",
+                    "broke; high has a hull broken over a ravine posting its blocks to the bottom of it.")
+            .defineInRange("settleDrop", 6, 0, 32);
+
+    public static final ModConfigSpec.IntValue SETTLE_SPREAD = BUILDER
+            .comment("How wide the heap of a contraption's own settled blocks is, in blocks. A hull's blocks live",
+                    "out in the plotgrid and only the crash itself has a place in the world, so unlike terrain",
+                    "they have no position of their own to fall from and are spread over a disc around the",
+                    "impact instead. Too small and a ship comes down as a tower of its own blocks; too large",
+                    "and the wreck is a thin film over the landscape rather than a pile.")
+            .defineInRange("settleSpread", 4, 0, 32);
 
     public static final ModConfigSpec.IntValue MAX_SCATTER_PER_TICK = BUILDER
             .comment("Hard cap on debris entities spawned per level per tick. Blocks past the cap still break,",
@@ -472,13 +501,13 @@ public final class ImpactConfig {
             .comment("How fast debris is thrown, relative to how much the impact overshot the block's resistance.",
                     "Raising it widens the field the wreckage ends up spread over; much past 1.0 blocks are",
                     "thrown far enough to land clear of the crash and stop looking like part of it.")
-            .defineInRange("scatterVelocityScale", 0.25, 0.0, 10.0);
+            .defineInRange("scatterVelocityScale", 0.12, 0.0, 10.0);
 
     public static final ModConfigSpec.DoubleValue SCATTER_UPWARD_KICK = BUILDER
             .comment("A flat upward push given to every piece of debris on top of the direction the impact threw",
                     "it. Without some of this a block broken by a downward hit is driven straight back into the",
                     "ground and settles where it stood, which looks like nothing happened to it.")
-            .defineInRange("scatterUpwardKick", 0.15, 0.0, 2.0);
+            .defineInRange("scatterUpwardKick", 0.08, 0.0, 2.0);
 
     public static final ModConfigSpec.IntValue LANDING_SEARCH = BUILDER
             .comment("How far a piece of debris may look for somewhere to put itself when it comes down",
@@ -557,7 +586,7 @@ public final class ImpactConfig {
                     "the small end: a wing clipping a tower, one block driven into a wall. A build made of",
                     "something soft spends less per block, so the same number goes much further through a",
                     "wooden ship than through a stone one.")
-            .defineInRange("hullScale", 8.0, 0.0, 1000.0);
+            .defineInRange("hullScale", 3.0, 0.0, 1000.0);
 
     public static final ModConfigSpec.DoubleValue TERRAIN_SHOCK_SCALE = BUILDER
             .comment("The same for the world's own blocks, which is a different wish and so a separate number.",
@@ -582,6 +611,19 @@ public final class ImpactConfig {
                     "the contact alone, which is the 1.2.0 behaviour.")
             .defineInRange("kineticScale", 1.0, 0.0, 1.0E6);
 
+    public static final ModConfigSpec.DoubleValue SHOCK_MIN_SPEED = BUILDER
+            .comment("The speed (m/s) below which an impact is not a crash and sends no shock at all, whatever",
+                    "it hit and however heavy it is. This is the guard that lets a build be landed and moved:",
+                    "a ship is thousands of kilograms, so at walking pace it is already carrying more energy",
+                    "than a stick of dynamite, and every other number here would happily spend it.",
+                    "It does two things at once. Nothing under it propagates, so setting a dirigible down or",
+                    "nudging it into place cannot fold it up. And above it the crash is priced on the speed",
+                    "over this rather than on the speed, so a landing a little too fast loses a few blocks",
+                    "rather than crossing a line into losing hundreds.",
+                    "Deliberately not touched by impactStrength: that dial is for how hard crashes are, and",
+                    "this is the line between a crash and ordinary use.")
+            .defineInRange("minSpeed", 8.0, 0.0, 1000.0);
+
     public static final ModConfigSpec.DoubleValue SHOCK_CONTACT_SHARE = BUILDER
             .comment("The largest share of a crash's remaining energy any one contact may spend. A landing",
                     "reports its contacts all along the face that touched, and this is what decides whether",
@@ -593,6 +635,44 @@ public final class ImpactConfig {
                     "several smaller waves that each finish in the tick they started.",
                     "Nothing is lost either way: what one contact does not take is left for the next.")
             .defineInRange("perContactShare", 0.2, 0.01, 1.0);
+
+    public static final ModConfigSpec.DoubleValue FRACTURE_SHARE = BUILDER
+            .comment("The share of a crash's energy that goes into splitting a build rather than pulverising it.",
+                    "A shock spent on its own spreads out of the impact in every direction, so what it leaves",
+                    "is a build with a bite taken out of it - which is what a crash does to the part that hit",
+                    "and is nothing like what happens to the rest. Real things come apart along a line: the",
+                    "back half of the ship separates and goes its own way, still a ship.",
+                    "So some of the energy is spent instead on cracks - one block wide, running clean through",
+                    "the build from the impact, cutting it into pieces rather than eating it. The rest still",
+                    "goes to the ordinary wave, and the two together are the crash: a wrecked, cratered end",
+                    "where it hit, and the rest of the hull in a couple of large pieces.",
+                    "Whether a piece that has been cut free then flies off on its own is Sable's decision, not",
+                    "this mod's - all this does is make sure nothing is still holding it on.",
+                    "0 is the old behaviour, waves only. 1 stops cratering and only ever cleaves.")
+            .defineInRange("fractureShare", 0.6, 0.0, 1.0);
+
+    public static final ModConfigSpec.IntValue FRACTURE_COUNT = BUILDER
+            .comment("How many cracks one crash may open, at most. They are opened once per build per tick by",
+                    "the first contact hard enough to earn them, not once per contact - a landing reports",
+                    "hundreds of contacts and they are all the same crash, and a hull cut in three hundred",
+                    "places is not in pieces, it is gravel. Two cuts is a build in three parts.",
+                    "0 turns cracking off as surely as fractureShare 0 does, and gives its energy back to the",
+                    "ordinary wave.")
+            .defineInRange("fractureCount", 2, 0, 8);
+
+    public static final ModConfigSpec.DoubleValue FRACTURE_FALLOFF = BUILDER
+            .comment("What a crack keeps of its purchasing power per block travelled, the way falloff does for a",
+                    "wave. Much closer to 1, because the two want opposite things: a wave has to be stopped",
+                    "from reaching across the map, and a crack is no use at all unless it reaches the far side",
+                    "of the build. Lower it and cracks turn back into short gashes near the impact.")
+            .defineInRange("fractureFalloff", 0.995, 0.1, 1.0);
+
+    public static final ModConfigSpec.IntValue FRACTURE_WANDER = BUILDER
+            .comment("How far a crack may drift off the flat plane it started on, in blocks. At 0 a build is cut",
+                    "as though by a saw, which is legible and looks like nothing that has ever broken. Each",
+                    "step the crack may wander a block along its own normal, up to this, so what it leaves is a",
+                    "ragged seam. Costs nothing: it is the same one block per column either way.")
+            .defineInRange("fractureWander", 2, 0, 16);
 
     public static final ModConfigSpec.DoubleValue SHOCK_COST = BUILDER
             .comment("What one block's resistance costs the wave passing through it. Higher makes material",
@@ -998,6 +1078,9 @@ public final class ImpactConfig {
                          double hullBackingWeight,
                          int hullBackingReach,
                          double contraptionScatterChance,
+                         double settleShare,
+                         int settleDrop,
+                         int settleSpread,
                          double scatterUpwardKick,
                          int landingSearch,
                          boolean landingNeedsFloor,
@@ -1010,7 +1093,12 @@ public final class ImpactConfig {
                          double hullShockScale,
                          double terrainShockScale,
                          double shockKineticScale,
+                         double shockMinSpeed,
                          double shockContactShare,
+                         double fractureShare,
+                         int fractureCount,
+                         double fractureFalloff,
+                         int fractureWander,
                          double shockCost,
                          double shockFalloff,
                          int shockMaxPerImpact,
@@ -1089,6 +1177,9 @@ public final class ImpactConfig {
                     HULL_BACKING_WEIGHT.get(),
                     HULL_BACKING_REACH.get(),
                     CONTRAPTION_SCATTER_CHANCE.get(),
+                    SETTLE_SHARE.get(),
+                    SETTLE_DROP.get(),
+                    SETTLE_SPREAD.get(),
                     SCATTER_UPWARD_KICK.get(),
                     LANDING_SEARCH.get(),
                     LANDING_NEEDS_FLOOR.get(),
@@ -1101,7 +1192,12 @@ public final class ImpactConfig {
                     HULL_SHOCK_SCALE.get() * Math.max(1.0, strength),
                     TERRAIN_SHOCK_SCALE.get() * Math.max(1.0, strength),
                     SHOCK_KINETIC_SCALE.get() * Math.max(1.0, strength),
+                    SHOCK_MIN_SPEED.get(),
                     SHOCK_CONTACT_SHARE.get(),
+                    FRACTURE_SHARE.get(),
+                    FRACTURE_COUNT.get(),
+                    FRACTURE_FALLOFF.get(),
+                    FRACTURE_WANDER.get(),
                     SHOCK_COST.get(),
                     SHOCK_FALLOFF.get(),
                     SHOCK_MAX_PER_IMPACT.get(),

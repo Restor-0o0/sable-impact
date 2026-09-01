@@ -704,7 +704,8 @@ public final class HullSweeper {
                     tuning.referencePressure(), tuning.massSensitivity(),
                     tuning.massFactorMin(), tuning.massFactorMax());
 
-            final double kinetic = ImpactResolver.shockKinetic(mass, speed, tuning.shockKineticScale());
+            final double kinetic = ImpactResolver.shockKinetic(
+                    mass, speed, tuning.shockKineticScale(), tuning.shockMinSpeed());
             final int bodyId = subLevel.getRuntimeId();
 
             for (int index = 0; index < hits.size(); index++) {

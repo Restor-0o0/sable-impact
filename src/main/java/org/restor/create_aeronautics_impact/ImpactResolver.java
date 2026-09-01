@@ -55,16 +55,6 @@ public final class ImpactResolver {
     }
 
     /**
-     * How much speed a hull gives up to the blocks it just broke.
-     *
-     * <p>The drag is priced per block, and a hull ploughing terrain meets hundreds of them in one tick, so
-     * the honest total is routinely more motion than the hull has. Handing that over at once is not a hull
-     * being slowed by the ground - it is a hull stopping dead, being picked up by gravity, ploughing, and
-     * stopping dead again, which is a stutter rather than a deceleration. The cap spreads the same debt over
-     * the ticks that follow: nothing is refunded, and a hull that ran into more than it could pay for still
-     * comes to rest, over about a second instead of between two frames.
-     */
-    /**
      * The momentum one block takes out of the body that punched through it.
      *
      * <p>Scaled by what was broken rather than flat. A block is not a fixed lump of mass in the way: it is
@@ -85,6 +75,16 @@ public final class ImpactResolver {
         return Double.isNaN(v) || Double.isInfinite(v) ? 0.0 : dragMass * resistance * v;
     }
 
+    /**
+     * How much speed a hull gives up to the blocks it just broke.
+     *
+     * <p>The drag is priced per block, and a hull ploughing terrain meets hundreds of them in one tick, so
+     * the honest total is routinely more motion than the hull has. Handing that over at once is not a hull
+     * being slowed by the ground - it is a hull stopping dead, being picked up by gravity, ploughing, and
+     * stopping dead again, which is a stutter rather than a deceleration. The cap spreads the same debt over
+     * the ticks that follow: nothing is refunded, and a hull that ran into more than it could pay for still
+     * comes to rest, over about a second instead of between two frames.
+     */
     public static double speedLost(final double momentum,
                                    final double hullMass,
                                    final double speed,
@@ -435,8 +435,15 @@ public final class ImpactResolver {
      * <p>Expressed in kilojoules, because Sable weighs a block at one or two kilograms and a whole ship is
      * therefore a few tonnes: joules would make the scale a number with four leading zeroes, and megajoules
      * would make every crash in the game round to nothing.
+     *
+     * <p>{@code floorSpeed} is what the speed is measured from, and it is the difference between a mod that
+     * models crashes and one that punishes moving at all. A ship is heavy enough that a walking pace is
+     * thousands of joules, so an energy measured from zero has a build that was nudged sideways shedding
+     * hull. Measuring from the floor instead makes the whole thing start at a speed rather than fade in from
+     * one: below it a crash is worth nothing at all, and just above it the curve leaves the ground gently
+     * before turning into the quadratic everybody expects.
      */
-    public static double shockKinetic(double mass, double speed, double scale) {
+    public static double shockKinetic(double mass, double speed, double scale, double floorSpeed) {
         if (scale <= 0.0 || mass <= 0.0 || Double.isNaN(mass) || Double.isInfinite(mass)) {
             return 0.0;
         }
@@ -444,7 +451,8 @@ public final class ImpactResolver {
         if (Double.isNaN(v) || Double.isInfinite(v)) {
             return 0.0;
         }
-        return scale * 0.5 * mass * v * v / 1.0e3;
+        final double over = v - Math.max(0.0, floorSpeed);
+        return over <= 0.0 ? 0.0 : scale * 0.5 * mass * over * over / 1.0e3;
     }
 
     public static double shockEnergy(double overshoot, double minOvershoot, double scale) {

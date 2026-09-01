@@ -233,7 +233,7 @@ compiles against Sable 2.0.3 and declares `[2.0.1,3.0.0)`.
 the mod list:
 
 ```
-./gradlew build -Pbuild_variant=fast   →  create_aeronautics_impact-1.2.2-fast.jar
+./gradlew build -Pbuild_variant=fast   →  create_aeronautics_impact-1.3.0-fast.jar
                                           "Create Aeronautics Impact (Fast)"
 ```
 
