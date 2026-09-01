@@ -652,7 +652,7 @@ public final class ImpactConfig {
                     "A handful is enough to cover the face that landed. Raise it for a crash that pulverises",
                     "more of the build, lower it towards 1 for a single clean crater and the rest in pieces.",
                     "Terrain is not capped: a hull ploughing a hillside is meant to plough it.")
-            .defineInRange("maxHullWaves", 4, 0, 4096);
+            .defineInRange("maxHullWaves", 1, 0, 4096);
 
     public static final ModConfigSpec.BooleanValue FRACTURE = BUILDER
             .comment("Whether a crash also splits a build along cracks, rather than only eating it outwards from",
@@ -750,6 +750,99 @@ public final class ImpactConfig {
                     "apart rather than how much of it does. Separate from the root maxBlocksPerTick, which",
                     "counts only what contacts themselves broke.")
             .defineInRange("maxBlocksPerTick", 6144, 0, 262144);
+
+    public static final ModConfigSpec.IntValue SHOCK_MAX_TICKS = BUILDER
+            .comment("How long a wave too big for one tick may keep going, in ticks, before what is left of it",
+                    "is dropped.",
+                    "Waves are put down and picked up across ticks so the tick budget is never blown, which is",
+                    "correct and which, on a crash big enough, is also what makes a wreck keep shedding blocks",
+                    "in rings for a minute after it has stopped moving. A collapse is over in a second; past",
+                    "that the build is not coming apart any more, it is decaying, and nothing about it reads",
+                    "as the crash that caused it.",
+                    "Two seconds is about as long as anything should still be visibly falling. Raise it to let",
+                    "very large wrecks finish what they started, at the price of that tail.")
+            .defineInRange("maxTicks", 40, 1, 1200);
+
+    static {
+        BUILDER.pop();
+    }
+
+    static {
+        BUILDER.comment("How a build comes down once it has landed, which is a different question from how a",
+                        "crash destroys it. Everything under [shock] spends the energy of the impact, and that",
+                        "gets the crater right and the rest of the build wrong: a wave spreads out of the point",
+                        "that touched in every direction at once, so what the player watches is a hull being",
+                        "eaten in rings from one corner. A real structure is held up by its own floor, and when",
+                        "the floor at one end goes the rest folds into the hole - from that end towards the far",
+                        "one, under its own weight, and over within a second or two.",
+                        "So a collapse is not an energy model. A hard landing arms a failure front at the",
+                        "contact; the front walks out through the build at a fixed speed and takes the floor",
+                        "out of every column it passes, deepest at the contact and tapering to a single course",
+                        "at the rim. Nothing is pushed - the build is simply no longer standing on anything.",
+                        "Where it lands it hits again, which arms the next front, and it comes down one storey",
+                        "at a time the way buildings do.")
+                .push("collapse");
+    }
+
+    public static final ModConfigSpec.BooleanValue COLLAPSE = BUILDER
+            .comment("Whether a landed build folds under its own weight at all. Off is the pre-1.5 behaviour,",
+                    "where the only thing that ever destroys a build is the energy of the crash and a wreck",
+                    "comes apart in rings from the point of impact.")
+            .define("collapse", true);
+
+    public static final ModConfigSpec.IntValue COLLAPSE_SPEED = BUILDER
+            .comment("How far the failure front travels through the build per tick, in blocks.",
+                    "This is the pace of the whole thing and it is a speed rather than a budget on purpose:",
+                    "what a collapse costs has nothing to do with how fast the front is moving, so this can be",
+                    "set by how it should look. At the default a build sixty blocks across is done folding in",
+                    "about half a second. Lower it for a slow, groaning failure that spreads visibly outwards;",
+                    "raise it and the whole footprint gives way at once.")
+            .defineInRange("speed", 6, 1, 64);
+
+    public static final ModConfigSpec.IntValue COLLAPSE_REACH = BUILDER
+            .comment("How far from the contact the failure spreads, in blocks, and so how much of a build one",
+                    "landing can bring down. Past this the build is untouched and holds itself up.",
+                    "It is also what the taper is measured against, so raising it does not only reach further,",
+                    "it makes the fold shallower over that whole distance.")
+            .defineInRange("reach", 48, 1, 512);
+
+    public static final ModConfigSpec.IntValue COLLAPSE_BITE = BUILDER
+            .comment("How many courses of floor a column loses directly under the contact, tapering to one at",
+                    "reach. This is the fold: the end that landed drops by this much and the far end barely",
+                    "moves, so the build comes down into its own wreckage rather than settling flat.",
+                    "On a hollow build a course is not a layer of the scan but a layer of material - the rooms",
+                    "in between are stepped over - so 3 means a ship loses its keel and the two decks above it",
+                    "at the point of impact, and its keel alone at the bow.",
+                    "1 removes the taper and with it the fold: the whole footprint drops by one course, evenly.")
+            .defineInRange("bite", 3, 1, 32);
+
+    public static final ModConfigSpec.IntValue COLLAPSE_DEPTH = BUILDER
+            .comment("How tall a column is searched for that material, in blocks, measured up from the contact.",
+                    "It has to clear the tallest room in the build or a column whose floor is the far side of",
+                    "a hold will find nothing and that part will not fail. It costs a block lookup per step of",
+                    "every column, so it is also the largest single cost here.")
+            .defineInRange("depth", 24, 1, 256);
+
+    public static final ModConfigSpec.IntValue COLLAPSE_DROP = BUILDER
+            .comment("How far below the contact the search starts, in blocks. A hull touches down on whatever",
+                    "hangs lowest, which is rarely the floor of the columns around it: without this a keel",
+                    "that dips below the point that touched is never found and the build fails one course too",
+                    "high, taking a deck out from under itself while standing on an intact bottom.")
+            .defineInRange("drop", 4, 0, 64);
+
+    public static final ModConfigSpec.IntValue COLLAPSE_COOLDOWN = BUILDER
+            .comment("Ticks after one front finishes before the same build may be given another.",
+                    "A build is touching what it fell on for the whole time it is falling into it, so without",
+                    "a pause every tick of the descent would arm a fresh collapse and the build would be gone",
+                    "before it had visibly moved. The pause is what makes the storeys separate events.")
+            .defineInRange("cooldown", 10, 0, 200);
+
+    public static final ModConfigSpec.IntValue COLLAPSE_MAX_PER_TICK = BUILDER
+            .comment("Ceiling on blocks all collapses together may drop per level per tick. Unlike a wave, what",
+                    "this stops is not resumed later - the front carries on from where it is next tick and the",
+                    "columns it skipped stay standing, which on a collapse is a hole in the wreckage rather",
+                    "than a wave that never arrives.")
+            .defineInRange("maxBlocksPerTick", 2048, 0, 262144);
 
     static {
         BUILDER.pop();
@@ -1194,7 +1287,16 @@ public final class ImpactConfig {
                          double shockCost,
                          double shockFalloff,
                          int shockMaxPerImpact,
-                         int shockMaxPerTick) {
+                         int shockMaxPerTick,
+                         int shockMaxTicks,
+                         boolean collapse,
+                         int collapseSpeed,
+                         int collapseReach,
+                         int collapseBite,
+                         int collapseDepth,
+                         int collapseDrop,
+                         int collapseCooldown,
+                         int collapseMaxPerTick) {
 
         /**
          * Reads the whole spec once, applying {@code impactStrength} to the thresholds it eases on the way.
@@ -1301,7 +1403,16 @@ public final class ImpactConfig {
                     SHOCK_COST.get(),
                     SHOCK_FALLOFF.get(),
                     SHOCK_MAX_PER_IMPACT.get(),
-                    SHOCK_MAX_PER_TICK.get());
+                    SHOCK_MAX_PER_TICK.get(),
+                    SHOCK_MAX_TICKS.get(),
+                    COLLAPSE.get(),
+                    COLLAPSE_SPEED.get(),
+                    COLLAPSE_REACH.get(),
+                    COLLAPSE_BITE.get(),
+                    COLLAPSE_DEPTH.get(),
+                    COLLAPSE_DROP.get(),
+                    COLLAPSE_COOLDOWN.get(),
+                    COLLAPSE_MAX_PER_TICK.get());
         }
 
         /** The lowest speed at which any block, however soft and however heavy the ram, could give way. */

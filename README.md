@@ -197,7 +197,7 @@ Every setting named here lives in the `[shock]` section of the config file.
 	kineticScale = 1.0
 	minSpeed = 8.0
 	perContactShare = 0.2
-	maxHullWaves = 4
+	maxHullWaves = 1
 	fracture = true
 	fractureShare = 0.6
 	fractureCount = 2
@@ -369,6 +369,16 @@ behaviour, a wave cut short by either ceiling is *not* thrown away: it is kept a
 sixty-four waves per level at a time. That is what lets a large crash spend its whole budget without spending
 it all in one frame.
 
+### If a wreck keeps shedding blocks long after it has stopped
+
+That tail is the wave, not the collapse. Waves are put down and picked up across ticks so the tick budget is
+never blown, which is correct, and which on a big enough crash means a wreck is still coming apart in rings a
+minute later. `maxTicks` is the wall: past it whatever is left of a wave is dropped. Lower it to cut the tail
+shorter, and lower `maxHullWaves` towards `1` so there are fewer waves to carry in the first place.
+
+If what is left after that is a build that lands, stops and then dissolves rather than folding, the setting
+that decides the difference is `collapse`.
+
 ### If a crash eats the build instead of splitting it
 
 This is the shape of the damage rather than the amount of it, and three settings decide it. Lower
@@ -403,6 +413,59 @@ slowly rather than one that stops half-done.
 
 Bear in mind that a shock only starts where a contact already broke something. If nothing at all is breaking,
 this chapter is not the problem - see [Where to start](#where-to-start).
+
+## Collapse: what a build does once it has landed
+
+Everything above spends the energy of the crash, and that gets the crater right and the rest of the build
+wrong. A wave spreads out of the point that touched in every direction at once, so what the player watches is
+a hull being eaten in rings from one corner; and since a wave too big for one tick is put down and picked up
+on the next, the eating carries on long after the thing has stopped moving. A large structure does not do
+that. A large structure is held up by its own floor, and when the floor at one end is gone the rest of it
+folds into the hole — from that end towards the far one, under its own weight, and over in a second or two.
+
+So a collapse is not an energy model at all. A hard enough landing **arms a failure front** at the contact,
+and the front then walks outwards through the build at a fixed number of blocks per tick regardless of what
+the crash was carrying. What it does where it passes is take out the floor: the lowest courses of material in
+each column, measured along whichever way is down. Nothing is pushed afterwards — the build is simply no
+longer standing on anything, and gravity is more convincing than any impulse this mod could apply.
+
+`collapseSpeed` is that pace, in blocks of front per tick. It is a speed rather than a budget on purpose:
+what a collapse costs has nothing to do with how fast the front travels, so it can be set by how it should
+look. At the default a build sixty blocks across finishes folding in about half a second. `collapseReach` is
+how far the failure spreads before the build holds itself up again.
+
+`collapseBite` is the shape of it, and the shape is the whole point. A column directly under the contact
+loses this many courses, tapering to a single course at the rim — so the end that landed drops by three or
+four blocks and the far end barely moves, and the build tilts into its own wreckage instead of settling flat.
+Where it lands it hits again, which arms the next front, and it comes down one storey at a time the way
+buildings do. Set it to `1` and the taper goes with it: the whole footprint drops by one course, evenly,
+which is a building being lowered rather than one collapsing.
+
+On a hollow build — and every build is hollow — a course means a course of *material*, not a layer of the
+scan. The column is read from below the contact upwards and the rooms in between are stepped over, so
+`collapseBite = 3` costs a ship its keel and the two decks above it at the point of impact, and its keel
+alone at the bow. `collapseDepth` is how tall that read is and has to clear the tallest room in the build,
+or a column whose floor is on the far side of a hold finds nothing and that part of the build does not fail.
+`collapseDrop` is how far below the contact it starts, because a hull touches down on whatever hangs lowest
+and that is rarely the floor of the columns around it.
+
+`collapseCooldown` is the pause between one front finishing and the same build being given another. A build
+is touching what it fell on for the whole time it is falling into it, so without a pause every tick of the
+descent would arm a fresh collapse and the build would be gone before it had visibly moved.
+
+This is deliberately crude, and it is crude in one specific way: **down is rounded to whichever of the six
+directions is nearest world down** at the moment of the hit, so the whole pass is axis-aligned and a column
+is a straight line. A build lands more or less the way it was flying, and one that has rolled far enough for
+that answer to be wrong has larger problems than which way its columns run.
+
+A landing and a ram are told apart by where the build was touched: the front is armed only by a contact
+**below the build's own centre of mass**, which is the cheapest thing that separates them. A ship that comes
+down on something is hit under its centre; one that scrapes a wall is hit level with it, and one that clips
+an arch overhead is hit above it. Only the first has lost the floor it was standing on. A ram into a cliff
+still comes apart — that is the wave's job, and the wave has no such scruples — it just does not fold.
+
+Set `collapse = false` for the pre-1.5 behaviour, where the only thing that ever destroys a build is the
+energy of the crash.
 
 ## Debris: what flies, and where it lands
 
@@ -599,7 +662,7 @@ Section `[shock]`. See [Shock](#shock-when-an-impact-is-felt-past-the-block-it-b
 | `kineticScale` | `1.0` | Energy per kilojoule the striking body is carrying. The main dial for how thoroughly a build comes apart. |
 | `minSpeed` | `8.0` | The speed (m/s) below which nothing is a crash and no shock is sent, whatever was hit. The guard that lets a build be landed and moved. Not touched by `impactStrength`. |
 | `perContactShare` | `0.2` | The largest share of a crash's remaining energy one contact may spend. Low spreads the damage along the face that hit; `1.0` gives it all to one point. |
-| `maxHullWaves` | `4` | How many waves one contraption may open in a tick, however many contacts it reports. What stops a crash from eating the build outwards in rings. Terrain is not capped. |
+| `maxHullWaves` | `1` | How many waves one contraption may open in a tick, however many contacts it reports. What stops a crash from eating the build outwards in rings. Terrain is not capped. |
 | `fracture` | `true` | Whether a crash also splits a build along cracks. `false` is waves only. |
 | `fractureShare` | `0.6` | The share of a crash spent cutting the build into pieces rather than eating a hole in it. |
 | `fractureCount` | `2` | How many cracks one crash may open, one per contact, up to this many per build per tick. |
@@ -611,6 +674,22 @@ Section `[shock]`. See [Shock](#shock-when-an-impact-is-felt-past-the-block-it-b
 | `falloff` | `0.98` | The share of its purchasing power a wave keeps per block travelled. What bounds its reach. |
 | `maxBlocksPerImpact` | `8192` | Ceiling on blocks one shock may break. |
 | `maxBlocksPerTick` | `6144` | Ceiling on blocks all shocks together may break per level per tick. |
+| `maxTicks` | `40` | How long a wave too big for one tick may keep going before what is left of it is dropped. What stands between a big crash and a wreck that sheds blocks for a minute. |
+
+### Collapse
+
+Section `[collapse]`. See [Collapse](#collapse-what-a-build-does-once-it-has-landed).
+
+| Option | Default | |
+|---|---|---|
+| `collapse` | `true` | Whether a landed build folds under its own weight at all. `false` is the pre-1.5 behaviour. |
+| `speed` | `6` | How far the failure front travels through the build per tick, in blocks. The pace of the whole thing. |
+| `reach` | `48` | How far from the contact the failure spreads, and what the taper is measured against. |
+| `bite` | `3` | Courses of floor a column loses directly under the contact, tapering to one at `reach`. This is the fold; `1` removes it. |
+| `depth` | `24` | How tall a column is searched for that material. Must clear the tallest room in the build. The largest single cost here. |
+| `drop` | `4` | How far below the contact the search starts, because a hull touches down on whatever hangs lowest. |
+| `cooldown` | `10` | Ticks before the same build may be given another front. What makes the storeys separate events. |
+| `maxBlocksPerTick` | `2048` | Ceiling on blocks all collapses together may drop per level per tick. What this stops is not resumed later. |
 
 ### Crushing
 
@@ -753,7 +832,7 @@ without opening it:
 ./gradlew build -Pbuild_variant=fast
 ```
 
-→ `create_aeronautics_impact-1.4.1-fast.jar`, listed as *Create Aeronautics Impact (Fast)*. Same mod id and
+→ `create_aeronautics_impact-1.5.0-fast.jar`, listed as *Create Aeronautics Impact (Fast)*. Same mod id and
 same version, so only one variant can be installed at a time.
 
 For a release, build every variant in one run:

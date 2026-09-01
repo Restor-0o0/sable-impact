@@ -227,6 +227,8 @@ public final class ImpactCallback implements BlockSubLevelCollisionCallback {
                 this.destroyedThisTick++;
                 PendingBreaks.rebound(level, hitSubLevel, worldImpact);
                 PendingBreaks.rebound(level, otherSubLevel, worldImpact);
+                fold(level, hitSubLevel, hitBlockPos, otherSubLevel, otherHitBlockPos,
+                        hitIsContraption, impactVelocity, tuning);
                 PendingBreaks.wear(level, hitBlockPos, hitState, worldImpact, impactVelocity,
                         hit.resistance(), ImpactResolver.wear(hit, other) * wearShare, hitIsContraption);
             }
@@ -255,6 +257,8 @@ public final class ImpactCallback implements BlockSubLevelCollisionCallback {
             softened = tuning.softBreakContact();
             PendingBreaks.rebound(level, hitSubLevel, worldImpact);
             PendingBreaks.rebound(level, otherSubLevel, worldImpact);
+            fold(level, hitSubLevel, hitBlockPos, otherSubLevel, otherHitBlockPos,
+                    hitIsContraption, impactVelocity, tuning);
             if (other != null) {
                 PendingBreaks.wear(level, otherHitBlockPos, otherState, worldImpact, impactVelocity,
                         other.resistance(), ImpactResolver.wear(other, hit) * wearShare, true);
@@ -270,6 +274,27 @@ public final class ImpactCallback implements BlockSubLevelCollisionCallback {
         return punchThrough || softened
                 ? new CollisionResult(NO_TANGENT_MOTION, true)
                 : CollisionResult.NONE;
+    }
+
+    /**
+     * Tells both builds in a contact that they have landed on something, which is what arms a collapse.
+     *
+     * <p>Both, because a contact between two hulls brings down whichever of them was not built for it, and
+     * that is not a question this has any way of answering. The terrain side of a contact is not a build and
+     * has nothing to fold.
+     */
+    private static void fold(final ServerLevel level,
+                             @Nullable final ServerSubLevel hitSubLevel,
+                             final BlockPos hitBlockPos,
+                             final ServerSubLevel otherSubLevel,
+                             final BlockPos otherHitBlockPos,
+                             final boolean hitIsContraption,
+                             final double impactVelocity,
+                             final ImpactConfig.Tuning tuning) {
+        Collapse.impact(level, otherSubLevel, otherHitBlockPos, impactVelocity, tuning);
+        if (hitIsContraption) {
+            Collapse.impact(level, hitSubLevel, hitBlockPos, impactVelocity, tuning);
+        }
     }
 
     /** How far past its break speed the block was hit, which is how fast it accumulates damage. */

@@ -191,7 +191,8 @@ public final class PendingBreaks {
 
         final long started = System.nanoTime();
         final long deadline = started + (long) (ImpactConfig.MAX_TICK_MILLIS.get() * 1.0e6);
-        int broken = ShockWave.resume(level, tuning, deadline);
+        int broken = Collapse.tick(level, tuning, deadline);
+        broken += ShockWave.resume(level, tuning, deadline);
 
         final Bucket bucket = LEVELS.remove(level);
         if (bucket == null) {

@@ -102,6 +102,9 @@ public final class ShockWave {
     private double budget;
     private int broken;
 
+    /** The tick a parked wave is given up on, so a wreck stops shedding blocks once it has stopped moving. */
+    private long expires;
+
     private ShockWave(final ServerLevel level,
                       final BlockPos origin,
                       final Vector3d worldImpact,
@@ -245,7 +248,7 @@ public final class ShockWave {
         wave.frontier.enqueue(origin.asLong());
         wave.distances.enqueue(1.0);
         wave.gaps.enqueue(0);
-        return wave.run(tuning, deadline) ? wave.broken : park(level, wave);
+        return wave.run(tuning, deadline) ? wave.broken : park(level, wave, tuning);
     }
 
     /**
@@ -268,7 +271,9 @@ public final class ShockWave {
         while (waves.hasNext()) {
             final ShockWave wave = waves.next();
             final int before = wave.broken;
-            if (!tuning.shockBlocks() || wave.run(tuning, deadline)) {
+            if (!tuning.shockBlocks()
+                    || level.getGameTime() > wave.expires
+                    || wave.run(tuning, deadline)) {
                 waves.remove();
             }
             broken += wave.broken - before;
@@ -318,7 +323,9 @@ public final class ShockWave {
      *
      * @return what it broke this tick, so the caller counts it either way.
      */
-    private static int park(final ServerLevel level, final ShockWave wave) {
+    private static int park(final ServerLevel level, final ShockWave wave,
+                            final ImpactConfig.Tuning tuning) {
+        wave.expires = level.getGameTime() + tuning.shockMaxTicks();
         final List<ShockWave> running = RUNNING.computeIfAbsent(level, ignored -> new ArrayList<>());
         // A crash that outruns this is one where the oldest waves have long since covered the ground the
         // newest are still working through, so the newest are the ones worth keeping.
