@@ -122,6 +122,7 @@ pass is stopped by it exactly once instead of finding the ground gone mid-step.
 | `mixin/VoxelNeighborhoodStateMixin.java` | Routes collider classification through `VoxelClassifier`. |
 | `mixin/PlotChunkHolderMixin.java` | Exposes Sable's private `buildBoundingBox` so `BoundsBatch` can call it. |
 | `mixin/SableCommonEventsMixin.java` | Sends Sable's own bounding-box rebuilds through `BoundsBatch` instead. |
+| `mixin/SubLevelHeatMapManagerMixin.java` | Stops a sub-level Sable has already removed from splitting itself into new ones. |
 
 `src/test/java/…` — `ImpactResolverTest` (the bulk of it), `SweepDetailTest`, `BackingTest`, `ShockWaveTest`,
 `StressTest`.

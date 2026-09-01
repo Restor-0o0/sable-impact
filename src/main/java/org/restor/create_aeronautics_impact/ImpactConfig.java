@@ -1151,6 +1151,32 @@ public final class ImpactConfig {
         BUILDER.pop();
     }
 
+    static {
+        BUILDER.comment("Guards this mod puts on Sable, against states a crash reaches and Sable does not",
+                        "expect. Nothing here changes what breaks. They are switches because each one is a",
+                        "check bolted onto somebody else's code, and a Sable release that fixes the same",
+                        "thing properly should be able to have this one taken back out.")
+                .push("compat");
+    }
+
+    public static final ModConfigSpec.BooleanValue GUARD_REMOVED_SPLITS = BUILDER
+            .comment("Whether a sub-level Sable has already removed is allowed to go on splitting itself.",
+                    "When the last of a build's mass goes, Sable destroys the plot and marks the sub-level",
+                    "removed on the spot - but the list it is removed from is only swept after every",
+                    "sub-level in it has ticked. A build emptied by this mod is emptied outside that tick,",
+                    "so on the following one the dead sub-level ticks once more, its connectivity flood-fill",
+                    "finishes, and it tries to assemble the pieces it found into fresh sub-levels inside a",
+                    "plot that is no longer there. Sable answers that with 'Sub-level assembly attempted",
+                    "inside plot of already removed sub-level', which is a crashed world.",
+                    "On, the flood-fill is skipped for a sub-level already marked removed - which is what",
+                    "the sweep a few lines further on is about to do to it in any case.",
+                    "Off restores the stock behaviour, crash included.")
+            .define("guardRemovedSplits", true);
+
+    static {
+        BUILDER.pop();
+    }
+
     public static final ModConfigSpec.BooleanValue DROP_ITEMS = BUILDER
             .comment("Whether shattered blocks drop their items.")
             .define("dropItems", false);
@@ -1487,6 +1513,14 @@ public final class ImpactConfig {
      */
     public static boolean cullInteriorVoxels() {
         return enabled() && CULL_INTERIOR_VOXELS.get();
+    }
+
+    /**
+     * Read straight off the spec for the same reason again: it is asked from Sable's own sub-level tick,
+     * which runs before this mod's tick listener does and so before a {@code Tuning} exists for the tick.
+     */
+    public static boolean guardRemovedSplits() {
+        return enabled() && GUARD_REMOVED_SPLITS.get();
     }
 
     /**

@@ -942,6 +942,16 @@ Section `[optimize]`. Neither of these changes what breaks.
 | `batchBounds` | `true` | Rebuild Sable's plot bounding boxes once at the end of a break pass instead of once per block removed. The single largest saving in this mod, by a very wide margin. |
 | `cacheChunks` | `true` | Let the passes that walk through a build remember the chunk they were last in. |
 
+### Compatibility
+
+Section `[compat]`. Guards this mod puts on Sable, against states a crash reaches and Sable does not expect.
+None of them change what breaks. They are switches because each one is a check bolted onto somebody else's
+code, and a Sable release that fixes the same thing properly should be able to have this one taken back out.
+
+| Option | Default | |
+|---|---|---|
+| `guardRemovedSplits` | `true` | Whether a sub-level Sable has already removed is allowed to go on splitting itself. Sable marks a build removed the moment its last mass goes, but only collects removed builds once every build has ticked; a build this mod empties is emptied after that sweep has run for the tick, so the dead build gets one more tick of its own, finishes its connectivity check and tries to assemble what it found inside a plot that no longer exists. Sable answers that by throwing, on the server thread, which ends the world. `false` restores the stock behaviour, crash included. |
+
 ### Collapse
 
 Section `[collapse]`. See [Collapse](#collapse-what-a-build-does-once-it-has-landed).
