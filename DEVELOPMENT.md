@@ -76,6 +76,7 @@ pass is stopped by it exactly once instead of finding the ground gone mid-step.
 |---|---|
 | `ImpactResolver.java` | The whole model as arithmetic: break speeds, which side loses, mass factors, wear, drag, backing. |
 | `SweepDetail.java` | The detail ladder the sweeper coarsens itself down: sample spacing and clip width per rung. |
+| `Failure.java` | The three ways a block gives way, which is all the stress model needs of a material. |
 
 **Reading the world**
 
@@ -86,6 +87,8 @@ pass is stopped by it exactly once instead of finding the ground gone mid-step.
 | `Backing.java` | How much material stands behind and beside a struck face, in the world or in a hull's own plot. Memoised, read from the physics thread. |
 | `PlotProbe.java` | "Is this point inside one of the hull's blocks?" — the single most repeated question in the mod. |
 | `ProfileHolder.java` | The interface `BlockStateProfileMixin` implements, so a state can hold its own profile. |
+| `ChunkCache.java` | One chunk remembered between lookups, which is most of what a wave through a grid asks for. |
+| `PlotBounds.java` | The interface `PlotChunkHolderMixin` implements, so a batch can rebuild a plot chunk's box later. |
 | `DebrisHolder.java` | The same for `FallingBlockEntityMixin`, so an entity can say this mod threw it. |
 
 **Acting on it**
@@ -100,20 +103,34 @@ pass is stopped by it exactly once instead of finding the ground gone mid-step.
 | `ShockWave.java` | What a break that overshot badly enough does to the blocks around it: a breadth-first wave through the grid it started in, bounded per impact, per tick and by the break pass deadline. |
 | `VoxelClassifier.java` | Sable's per-block collider classification, done faster. Purely an optimisation. |
 | `ContactTracker.java` | Contact-block counts per sub-level, which is the denominator of the whole mass model. |
+| `Collapse.java` | What a build sheds after the crash is over, one column at a time. |
+| `BuildDamage.java` | How much of a build one crash is allowed to take, and what it does when it has taken it. |
+| `GlassRun.java` | The fragile pass: a flood fill through solid material that takes out the windows and leaves the walls. |
+| `BoundsBatch.java` | Holds Sable's bounding-box rebuilds back until the break pass is over, then runs each one once. |
 
 **Plumbing**
 
 | File | |
 |---|---|
 | `CreateAeronauticsImpact.java` | Mod entry point. Config registration and six listeners. |
+| `client/ImpactClient.java` | The client entry point: the config screen factory, and the pause-menu button that opens it. |
 | `ImpactConfig.java` | Every setting, plus the per-tick `Tuning` snapshot everything else reads. |
 | `ImpactStats.java` | What the mod costs the tick, printed on demand (`logPerformance`). |
 | `mixin/BlockMixin.java` | Claims every block in the game for `ImpactCallback`. |
 | `mixin/BlockStateProfileMixin.java` | Adds the profile field to `BlockState`. |
 | `mixin/FallingBlockEntityMixin.java` | Gives debris this mod threw somewhere to land when the spot it came down in is taken. |
 | `mixin/VoxelNeighborhoodStateMixin.java` | Routes collider classification through `VoxelClassifier`. |
+| `mixin/PlotChunkHolderMixin.java` | Exposes Sable's private `buildBoundingBox` so `BoundsBatch` can call it. |
+| `mixin/SableCommonEventsMixin.java` | Sends Sable's own bounding-box rebuilds through `BoundsBatch` instead. |
 
-`src/test/java/…` — `ImpactResolverTest` (the bulk of it), `SweepDetailTest`, `BackingTest`.
+`src/test/java/…` — `ImpactResolverTest` (the bulk of it), `SweepDetailTest`, `BackingTest`, `ShockWaveTest`,
+`StressTest`.
+
+`src/main/resources/` — `impact_logo.png` at the jar root is the mod list entry's logo, named by
+`logoFile` in `neoforge.mods.toml`. Under `assets/create_aeronautics_impact/`, `lang/en_us.json` names every
+config key for the settings screen (labels only — the tooltips come from the spec's own comments), and
+`textures/gui/sprites/widget/` holds the pause-menu button, picked up by vanilla's gui atlas because it
+scans every namespace.
 
 ## Invariants
 
@@ -198,6 +215,9 @@ the heightmap and left alone for a while, which is the ordinary case for anythin
    because it is asked from a remesh with no tick around it; `sweepFinestDetail` and `materialOverrides` are
    pushed into their classes from `read()`.
 4. Document it in the README's reference tables. Every key in the code is in there, and nothing else is.
+5. Add a label for it to `assets/create_aeronautics_impact/lang/en_us.json`, keyed
+   `create_aeronautics_impact.configuration.<leafName>` — the leaf, not the path, which is why two keys of
+   the same name in different sections share one label. Without it the settings screen shows the raw key.
 
 Defaults must reproduce existing behaviour exactly, so that upgrading is a no-op on an existing world.
 
@@ -233,7 +253,7 @@ compiles against Sable 2.0.3 and declares `[2.0.1,3.0.0)`.
 the mod list:
 
 ```
-./gradlew build -Pbuild_variant=fast   →  create_aeronautics_impact-1.7.0-fast.jar
+./gradlew build -Pbuild_variant=fast   →  create_aeronautics_impact-1.8.0-fast.jar
                                           "Create Aeronautics Impact (Fast)"
 ```
 

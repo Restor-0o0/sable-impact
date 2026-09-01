@@ -61,6 +61,19 @@ a restart; the caches that depend on it are dropped and rebuilt on the next tick
 Every option carries its full explanation as a comment in the generated file, including why the default is
 the default. What follows is the map — the reference tables at the end list every key.
 
+### Editing them in game
+
+The file is not the only way in. Pause the game and there is a small icon in the top right corner of the
+menu; it opens NeoForge's own configuration screen, built from the same spec that writes the file, so every
+option is there with its comment as a tooltip and its range enforced by the widget. The same screen is on
+the *Mods* list, under *Create Aeronautics Impact* → *Config*. Changes are written straight to the save's
+toml and picked up on the next tick, exactly as an edit by hand would be.
+
+There is deliberately no button on the title screen, though several mods put one there. This config lives in
+the save, so with no world loaded there is nothing to edit and NeoForge greys the screen out; a button whose
+only possible answer is "load a world first" is worse than no button. On a dedicated server the screen is
+read-only for the same reason — the file the client would be editing is not the one the server is using.
+
 ### Turning it off
 
 **`enabled = false`** is the master switch, and it is the whole of the mod: no contact is examined, no block
@@ -1099,7 +1112,7 @@ without opening it:
 ./gradlew build -Pbuild_variant=fast
 ```
 
-→ `create_aeronautics_impact-1.7.0-fast.jar`, listed as *Create Aeronautics Impact (Fast)*. Same mod id and
+→ `create_aeronautics_impact-1.8.0-fast.jar`, listed as *Create Aeronautics Impact (Fast)*. Same mod id and
 same version, so only one variant can be installed at a time.
 
 For a release, build every variant in one run:
