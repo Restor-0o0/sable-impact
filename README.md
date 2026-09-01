@@ -377,6 +377,23 @@ a crack reaches the far side of the build instead of stopping inside it. Raise `
 mostly rooms, so a seam can cross them. Only then raise `fractureShare`, which just moves energy between two
 things that are both already working.
 
+### If a build hops off what it landed on
+
+This is not a break at all and nothing in the shock or the drops can reach it. Blocks are not removed until
+after the physics step, so for the whole of the step the build is resolved against the wall it is destroying,
+and pushing overlapping things apart is the one thing a solver is for: a hull that has driven itself a block
+into the ground is pushed a block back out of it, hardest where it went deepest. That is a shove off one
+corner rather than a lift, which is why the build comes back up at an angle and can end the tick on its side.
+
+`rebound` takes the outward part of that speed back, and `reboundSpin` takes back some of the rotation it
+came with. Both fire only on ticks where the build actually broke something, and only along the way out — a
+build still falls under its own weight, still ploughs forward into what it is cutting, still climbs off a
+hillside under power. `softBreakContact` above is the same problem attacked at the contact, and it helps, but
+it cannot finish the job: the contacts it does not remove are still resolved, and a lopsided set of them is
+exactly what the torque comes from.
+
+Set both to `1.0` for the pre-1.4.1 behaviour.
+
 ### If structures are still too solid
 
 In order: raise `kineticScale`, raise `falloff` towards `0.99`, lower `cost`, then lower `minOvershoot`. If
@@ -639,6 +656,8 @@ Section `[shock]`. See [Shock](#shock-when-an-impact-is-felt-past-the-block-it-b
 | `softBreakContact` | `true` | Whether a block that is breaking anyway stops pushing back. Blocks are removed after the physics step, so without this the rest of the step is spent bouncing the build off a wall that is already gone — the hop a hull makes settling onto ground it is grinding through. What it would have been pushed back with is taken as drag instead. |
 | `breakDragMass` | `2.0` | Mass (kg) a contraption must drag up to its own speed per point of resistance of every block punched clean through. `0` is free digging. |
 | `breakDragMax` | `0.25` | The largest share of its speed a contraption may lose to breaking blocks in one tick. `1` restores dead stops. |
+| `rebound` | `0.0` | How much of the speed a build has picked up *away* from what it just broke it keeps. `0` takes all of it, so a crash presses down under its own weight instead of hopping back off the impact. `1.0` restores the old behaviour. |
+| `reboundSpin` | `0.5` | How much of its spin a build keeps on a tick it broke something. The bounce comes off whichever corner went deepest, so what it mostly buys is rotation — this is what stops a hull ending up on its side. `1.0` restores the old behaviour. |
 
 ### Breaking and drops
 
@@ -734,7 +753,7 @@ without opening it:
 ./gradlew build -Pbuild_variant=fast
 ```
 
-→ `create_aeronautics_impact-1.4.0-fast.jar`, listed as *Create Aeronautics Impact (Fast)*. Same mod id and
+→ `create_aeronautics_impact-1.4.1-fast.jar`, listed as *Create Aeronautics Impact (Fast)*. Same mod id and
 same version, so only one variant can be installed at a time.
 
 For a release, build every variant in one run:

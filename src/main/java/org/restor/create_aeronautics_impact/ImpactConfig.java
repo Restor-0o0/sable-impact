@@ -793,6 +793,31 @@ public final class ImpactConfig {
                     "Off restores the old behaviour, where only impacts past punchThroughRatio drop a contact.")
             .define("softBreakContact", true);
 
+    public static final ModConfigSpec.DoubleValue REBOUND = BUILDER
+            .comment("How much of the speed a build has picked up away from what it just broke it is allowed",
+                    "to keep, as a fraction. 0 takes all of it; 1 leaves the solver's answer alone.",
+                    "This is the spring. A landing is resolved as a stack of contacts against blocks that are",
+                    "about to be removed, and a solver's whole job is to push overlapping things apart, so a",
+                    "build that has driven itself a block into the ground is pushed a block back out of it -",
+                    "and it is pushed hardest where it is deepest, which is a shove off one corner rather than",
+                    "a lift. That is the hop, and it is where being turned on your side comes from too. None",
+                    "of it is a break: it is what the solver did to the contacts this mod declined to remove,",
+                    "and nothing about how blocks break can reach it.",
+                    "Only speed pointing away from what was broken is taken, and only on ticks something did",
+                    "break, so a build still falls under its own weight, still ploughs, still climbs off a",
+                    "hillside under power. It just does not come back up off what it landed on.")
+            .defineInRange("rebound", 0.0, 0.0, 1.0);
+
+    public static final ModConfigSpec.DoubleValue REBOUND_SPIN = BUILDER
+            .comment("The same for spin: how much of its rotation a build keeps on a tick it broke something.",
+                    "The bounce is off whichever corner is deepest, so what it mostly buys is not height but",
+                    "rotation - a hull settling onto ground it is grinding through ends up on its side, and",
+                    "then lands on a face that was never built to be landed on. Taking the linear part away",
+                    "removes what causes it, this removes what is left.",
+                    "Halved per tick by default, so a crash still topples and rolls, just over the second it",
+                    "takes to come to rest rather than in a single frame. 1 leaves the solver's answer alone.")
+            .defineInRange("reboundSpin", 0.5, 0.0, 1.0);
+
     public static final ModConfigSpec.DoubleValue BREAK_DRAG_MASS = BUILDER
             .comment("Mass (kg) a contraption has to drag up to its own speed for every point of resistance of",
                     "every block it punches clean through. This is how much momentum a block gets to absorb on",
@@ -1118,6 +1143,8 @@ public final class ImpactConfig {
                          boolean punchThrough,
                          double punchThroughRatio,
                          boolean softBreakContact,
+                         double rebound,
+                         double reboundSpin,
                          double breakDragMass,
                          double breakDragMax,
                          double fragileTrigger,
@@ -1223,6 +1250,8 @@ public final class ImpactConfig {
                     PUNCH_THROUGH.get(),
                     PUNCH_THROUGH_RATIO.get(),
                     SOFT_BREAK_CONTACT.get(),
+                    REBOUND.get(),
+                    REBOUND_SPIN.get(),
                     BREAK_DRAG_MASS.get(),
                     BREAK_DRAG_MAX.get(),
                     FRAGILE_TRIGGER.get(),

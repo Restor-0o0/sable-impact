@@ -225,6 +225,8 @@ public final class ImpactCallback implements BlockSubLevelCollisionCallback {
                     impactVelocity, other.resistance(), overshoot(impactVelocity, other), true,
                     bodyId, kinetic)) {
                 this.destroyedThisTick++;
+                PendingBreaks.rebound(level, hitSubLevel, worldImpact);
+                PendingBreaks.rebound(level, otherSubLevel, worldImpact);
                 PendingBreaks.wear(level, hitBlockPos, hitState, worldImpact, impactVelocity,
                         hit.resistance(), ImpactResolver.wear(hit, other) * wearShare, hitIsContraption);
             }
@@ -251,6 +253,8 @@ public final class ImpactCallback implements BlockSubLevelCollisionCallback {
                 bodyId, kinetic)) {
             this.destroyedThisTick++;
             softened = tuning.softBreakContact();
+            PendingBreaks.rebound(level, hitSubLevel, worldImpact);
+            PendingBreaks.rebound(level, otherSubLevel, worldImpact);
             if (other != null) {
                 PendingBreaks.wear(level, otherHitBlockPos, otherState, worldImpact, impactVelocity,
                         other.resistance(), ImpactResolver.wear(other, hit) * wearShare, true);

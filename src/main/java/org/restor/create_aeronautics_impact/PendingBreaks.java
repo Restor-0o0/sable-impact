@@ -9,6 +9,7 @@ import net.minecraft.world.level.block.state.BlockState;
 import net.neoforged.neoforge.event.tick.LevelTickEvent;
 import org.jetbrains.annotations.Nullable;
 import org.joml.Vector3d;
+import org.joml.Vector3dc;
 
 import it.unimi.dsi.fastutil.longs.Long2ObjectMap;
 import it.unimi.dsi.fastutil.longs.Long2ObjectOpenHashMap;
@@ -79,6 +80,29 @@ public final class PendingBreaks {
         private final LongOpenHashSet claimed = new LongOpenHashSet();
         private final Long2ObjectMap<Wear> worn = new Long2ObjectOpenHashMap<>();
         private final Map<ServerSubLevel, Double> drag = new HashMap<>();
+        private final Map<ServerSubLevel, Bounce> rebounds = new HashMap<>();
+    }
+
+    /**
+     * Where a body broke things this tick, averaged, which is the direction it must not be thrown from.
+     *
+     * <p>Averaged rather than taken from one contact because a landing touches down along a whole face, and
+     * the single contact that happened to be reported first is off at one end of it. The mean of them is the
+     * middle of what the build came down on, which is what "away" has to be measured from if the answer is
+     * to be a lift rather than a shove off a corner.
+     */
+    private static final class Bounce {
+        private final Vector3d sum = new Vector3d();
+        private int count;
+
+        private void add(final Vector3dc where) {
+            this.sum.add(where);
+            this.count++;
+        }
+
+        private Vector3d mean() {
+            return this.sum.div(this.count, new Vector3d());
+        }
     }
 
     private static final Map<ServerLevel, Bucket> LEVELS = new WeakHashMap<>();
@@ -224,6 +248,7 @@ public final class PendingBreaks {
         }
 
         applyDrag(bucket.drag);
+        applyRebound(bucket.rebounds, tuning);
         carry(level, bucket, next);
 
         if (timed) {
@@ -279,6 +304,22 @@ public final class PendingBreaks {
         }
     }
 
+    /**
+     * Notes that this body broke something here, so the tick can take back whatever it is thrown away with.
+     *
+     * <p>Called from inside the step, so like everything else here it only writes something down.
+     */
+    public static void rebound(final ServerLevel level,
+                               @Nullable final ServerSubLevel subLevel,
+                               final Vector3d worldImpact) {
+        if (subLevel == null) {
+            return;
+        }
+        LEVELS.computeIfAbsent(level, ignored -> new Bucket())
+                .rebounds.computeIfAbsent(subLevel, ignored -> new Bounce())
+                .add(worldImpact);
+    }
+
     /** Pays out every hull's accumulated drag for the tick. */
     private static void applyDrag(final Map<ServerSubLevel, Double> drag) {
         for (final Map.Entry<ServerSubLevel, Double> entry : drag.entrySet()) {
@@ -324,6 +365,69 @@ public final class PendingBreaks {
     }
 
     private static final Vector3d NO_SPIN = new Vector3d();
+
+    /** Takes the spring out of every body that broke something this tick. */
+    private static void applyRebound(final Map<ServerSubLevel, Bounce> bounces,
+                                     final ImpactConfig.Tuning tuning) {
+        if (tuning.rebound() >= 1.0 && tuning.reboundSpin() >= 1.0) {
+            return;
+        }
+        for (final Map.Entry<ServerSubLevel, Bounce> entry : bounces.entrySet()) {
+            settle(entry.getKey(), entry.getValue().mean(), tuning);
+        }
+    }
+
+    /**
+     * Takes back the speed the solver gave a body away from what it broke, and some of the spin with it.
+     *
+     * <p>Nothing about how blocks break can reach this. Blocks are removed after the step, so for the whole
+     * of the step the build is resolved against what it is destroying, and pushing overlapping things apart
+     * is the one thing a solver is for: a hull that has driven a block into the ground is pushed a block back
+     * out of it, hardest where it went deepest, which is a shove off a corner rather than a lift. The result
+     * is a build that hops and turns over, and it is the same result whether the blocks under it survived.
+     *
+     * <p>So it is undone here, in velocity, where the whole tick's answer is visible at once - and only along
+     * the way out. A build still falls under its own weight, still ploughs forward into what it is cutting,
+     * still climbs off a hillside under power; every one of those is motion towards what it broke or across
+     * it. What it may not do is come back up off it.
+     */
+    private static void settle(final ServerSubLevel subLevel,
+                               final Vector3d impact,
+                               final ImpactConfig.Tuning tuning) {
+        if (subLevel.isRemoved()) {
+            return;
+        }
+        final RigidBodyHandle body = RigidBodyHandle.of(subLevel);
+        if (body == null || !body.isValid()) {
+            return;
+        }
+        final MassData mass = subLevel.getMassTracker();
+        final Vector3dc centre = mass == null || mass.isInvalid() ? null : mass.getCenterOfMass();
+        if (centre == null) {
+            return;
+        }
+
+        final Vector3d away = subLevel.logicalPose()
+                .transformPosition(new Vector3d(centre), new Vector3d())
+                .sub(impact);
+        final double reach = away.length();
+        if (Double.isNaN(reach) || reach < 1.0e-4) {
+            return;
+        }
+        away.div(reach);
+
+        final Vector3d velocity = body.getLinearVelocity(new Vector3d());
+        final double separating = velocity.dot(away);
+        final Vector3d held = Double.isNaN(separating) || separating <= 0.0
+                ? NO_SPIN
+                : away.mul(-separating * (1.0 - tuning.rebound()));
+
+        final Vector3d spin = body.getAngularVelocity(new Vector3d());
+        if (Double.isNaN(spin.lengthSquared())) {
+            spin.set(0.0);
+        }
+        body.addLinearAndAngularVelocity(held, spin.mul(-(1.0 - tuning.reboundSpin())));
+    }
 
     /** The hull's mass, or zero when Sable's tracker has nothing usable - which reads as "do not brake". */
     private static double massOf(final ServerSubLevel subLevel) {
