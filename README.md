@@ -68,8 +68,8 @@ the default. What follows is the map — the reference tables at the end list ev
 
 ### Editing them in game
 
-The file is not the only way in. Pause the game and there is a small icon in the top right corner of the
-menu; it opens NeoForge's own configuration screen, built from the same spec that writes the file, so every
+The file is not the only way in. Pause the game and there is a small icon beside the *Mods* button, level
+with it and against the right edge of the menu; it opens NeoForge's own configuration screen, built from the same spec that writes the file, so every
 option is there with its comment as a tooltip and its range enforced by the widget. The same screen is on
 the *Mods* list, under *Create Aeronautics Impact* → *Config*. Changes are written straight to the save's
 toml and picked up on the next tick, exactly as an edit by hand would be.

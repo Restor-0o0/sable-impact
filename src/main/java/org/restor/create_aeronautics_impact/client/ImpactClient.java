@@ -1,12 +1,16 @@
 package org.restor.create_aeronautics_impact.client;
 
 import net.minecraft.client.Minecraft;
+import net.minecraft.client.gui.components.AbstractWidget;
 import net.minecraft.client.gui.components.ImageButton;
 import net.minecraft.client.gui.components.Tooltip;
 import net.minecraft.client.gui.components.WidgetSprites;
+import net.minecraft.client.gui.components.events.GuiEventListener;
 import net.minecraft.client.gui.screens.PauseScreen;
 import net.minecraft.network.chat.Component;
+import net.minecraft.network.chat.contents.TranslatableContents;
 import net.minecraft.resources.ResourceLocation;
+import org.jetbrains.annotations.Nullable;
 import net.neoforged.api.distmarker.Dist;
 import net.neoforged.fml.ModContainer;
 import net.neoforged.fml.common.Mod;
@@ -39,6 +43,12 @@ public final class ImpactClient {
             ResourceLocation.fromNamespaceAndPath(CreateAeronauticsImpact.MODID, "widget/impact_button"),
             ResourceLocation.fromNamespaceAndPath(CreateAeronauticsImpact.MODID, "widget/impact_button_highlighted"));
 
+    /**
+     * The full-width Mods button at the bottom of the pause menu grid. Its right edge is the grid's right
+     * edge, which is the only measurement here that is worth taking off a live widget rather than guessing.
+     */
+    private static final String NEIGHBOUR = "fml.menu.mods";
+
     private static final Component TITLE =
             Component.translatable(CreateAeronauticsImpact.MODID + ".configuration.title");
 
@@ -54,20 +64,45 @@ public final class ImpactClient {
     }
 
     /**
-     * Hangs the settings shortcut in the corner of the pause menu.
+     * Hangs the settings shortcut off the side of the pause menu, level with the Mods button.
      *
      * <p>Added after the screen has laid itself out rather than into its layout, so that it cannot shift a
      * vanilla button by a pixel: the pause menu is a centred grid, and an extra cell in it would move every
-     * row. A corner is the one place a widget can be put without knowing where anything else ended up.
+     * row. The position is read back off the laid-out grid instead, which is what puts the button beside the
+     * menu rather than in a corner of the screen with nothing near it.
      */
     private static void onScreenInit(final ScreenEvent.Init.Post event) {
         if (!(event.getScreen() instanceof final PauseScreen pause) || !pause.showsPauseMenu()) {
             return;
         }
 
-        final ImageButton button = new ImageButton(pause.width - 24, 4, 20, 20, SPRITES,
+        final AbstractWidget neighbour = neighbour(event.getListenersList());
+        final int x = neighbour == null ? pause.width - 24
+                : Math.min(neighbour.getX() + neighbour.getWidth() + 4, pause.width - 24);
+        final int y = neighbour == null ? 4 : neighbour.getY();
+
+        final ImageButton button = new ImageButton(x, y, 20, 20, SPRITES,
                 press -> Minecraft.getInstance().setScreen(new ConfigurationScreen(container, pause)), TITLE);
         button.setTooltip(Tooltip.create(TITLE));
         event.addListener(button);
+    }
+
+    /**
+     * The laid-out widget to hang the button off, or null if the menu is not the one we expect.
+     *
+     * <p>Matched on the translation key rather than the component, because a resource pack is free to change
+     * what the button says and this should not care. Nothing is assumed about the result beyond it having a
+     * position: another mod may have moved the row, and the button follows it wherever it went.
+     */
+    @Nullable
+    private static AbstractWidget neighbour(final Iterable<GuiEventListener> listeners) {
+        for (final GuiEventListener listener : listeners) {
+            if (listener instanceof final AbstractWidget widget
+                    && widget.getMessage().getContents() instanceof final TranslatableContents contents
+                    && NEIGHBOUR.equals(contents.getKey())) {
+                return widget;
+            }
+        }
+        return null;
     }
 }
