@@ -1569,6 +1569,47 @@ public final class ImpactConfig {
         BUILDER.pop();
     }
 
+    static {
+        BUILDER.comment("Holding the world under a wreck still while the wreck is still coming apart.",
+                        "Sable only ticks a build in chunks the server is ticking blocks in - simulation",
+                        "distance, not render distance. A build that crosses that edge is not paused: it is",
+                        "written out whole into a holding chunk and taken out of the world, which from the",
+                        "outside is a ship that vanishes in mid-air. When a chunk under it comes back, all",
+                        "of it is read in again in one go, on the server thread, inside the tick - which for",
+                        "a large build is a stall of several seconds ending with the ship reappearing.",
+                        "For a parked airship nobody is looking at, that trade is the right one and this",
+                        "should stay out of it. In the ten seconds after a crash it is the wrong one, since",
+                        "those are the ten seconds this mod is removing blocks, walking connectivity and",
+                        "assembling halves - and a wreck written out in the middle of that comes back with",
+                        "all of it still to do, having paid a stall to get there. It is also when a build is",
+                        "likeliest to cross the line, because it is falling away from whoever is watching.")
+                .push("anchor");
+    }
+
+    public static final ModConfigSpec.BooleanValue ANCHOR = BUILDER
+            .comment("Whether a build this mod has damaged keeps the chunks under it ticking until it has",
+                    "settled. The ticket is taken at block-ticking level, which is the level Sable's own",
+                    "test asks about, and it carries a lifespan of its own - so nothing here can leave a",
+                    "chunk loaded behind it, through a crash or otherwise.",
+                    "Off restores the stock behaviour, vanishing included.")
+            .define("hold", true);
+
+    public static final ModConfigSpec.IntValue ANCHOR_TICKS = BUILDER
+            .comment("How long a build stays anchored after the last block it lost, in ticks. Long enough to",
+                    "cover the collapse, the connectivity walk and the separations that follow them; past",
+                    "that a wreck is just a build again and can be unloaded like any other.")
+            .defineInRange("ticks", 200, 0, 24000);
+
+    public static final ModConfigSpec.IntValue ANCHOR_CHUNKS = BUILDER
+            .comment("The most chunk columns one build may hold. A build whose footprint is wider than this",
+                    "is left alone entirely, on the grounds that holding that much of the world open costs",
+                    "more than the stall it would have saved.")
+            .defineInRange("chunks", 256, 1, 16384);
+
+    static {
+        BUILDER.pop();
+    }
+
     public static final ModConfigSpec.BooleanValue DROP_ITEMS = BUILDER
             .comment("Whether shattered blocks drop their items.")
             .define("dropItems", false);
@@ -2039,6 +2080,9 @@ public final class ImpactConfig {
                          boolean freeFallQuiet,
                          int quietMargin,
                          int maxFallQuietTicks,
+                         boolean anchor,
+                         int anchorTicks,
+                         int anchorChunks,
                          int backingMemoTicks,
                          int maxContactsPerTick,
                          boolean blockUpdates,
@@ -2227,6 +2271,9 @@ public final class ImpactConfig {
                     FREE_FALL_QUIET.get(),
                     QUIET_MARGIN.get(),
                     MAX_FALL_QUIET_TICKS.get(),
+                    ANCHOR.get(),
+                    ANCHOR_TICKS.get(),
+                    ANCHOR_CHUNKS.get(),
                     BACKING_MEMO_TICKS.get(),
                     MAX_CONTACTS_PER_TICK.get(),
                     BLOCK_UPDATES.get(),

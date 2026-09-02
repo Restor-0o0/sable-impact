@@ -858,6 +858,35 @@ terminal velocity.
 Nothing about what breaks changes. It is the same answer, arrived at three to five times more cheaply on
 anything in a long fall. Set `freeFallQuiet = false` for the pre-1.9.4 behaviour.
 
+## Anchoring: a wreck that stays in the world long enough to finish coming apart
+
+Sable will only tick a build in chunks the server is ticking blocks in. That is simulation distance, not
+render distance, and the two are set separately - so a build can be well inside what you can see and outside
+what the server is willing to run.
+
+A build that crosses that line is not paused. It is serialised out whole into a holding chunk, taken out of
+the container, and its plot torn down; from the outside the ship is simply gone, and the server goes on
+sending movement packets for a thing the client no longer has. When a chunk under it comes back, all of it is
+read in again in a single call, on the server thread, inside the level tick. For a large build that is a stall
+of several seconds, ending with the ship reappearing exactly where it should have been all along - which is
+what a hull vanishing for five seconds and popping back looks like from the inside.
+
+For a parked airship nobody is looking at, that is the right trade and this should stay out of it. In the ten
+seconds after a crash it is the wrong one twice over. Those are the ten seconds this mod spends removing
+blocks, walking connectivity and assembling halves, and a wreck written out in the middle of that comes back
+with every bit of it still to do, having paid a stall to get there. They are also when a build is likeliest to
+cross the line at all, because it is falling away from whoever is watching it.
+
+So a build this mod has damaged keeps a chunk ticket on the columns under it, at block-ticking level, which is
+the level Sable's own test asks about. It is refreshed for as long as the build keeps losing blocks and for
+`ticks` afterwards, and then it is not. The ticket carries a lifespan of its own, shorter than the window it
+serves, so nothing here can leave a chunk held open behind it - through a crash, a config reload, or a bug in
+this file. Stop refreshing and it is gone in two seconds regardless.
+
+A build wider than `chunks` columns is left alone entirely, on the grounds that holding that much of the world
+open costs more than the stall it would have saved. Set `hold = false` for the pre-1.9.5 behaviour, vanishing
+included.
+
 ## Load bearing: what holds the world up
 
 Everything above prices a block against the thing that hit it. That is the whole of an impact and none of a
@@ -1268,6 +1297,16 @@ code, and a Sable release that fixes the same thing properly should be able to h
 |---|---|---|
 | `guardDeadBodyReads` | `true` | Whether Sable's autosave may ask a destroyed rigid body how fast it is going. Same fault as the row below, at the other end: a build this mod empties has its physics body destroyed at once but stays in the container's list until the sweep, and an autosave landing in that window serialises it, velocities included. Rapier answers a read on a destroyed body by throwing, out of `ServerLevel.save`. On, a destroyed body reports standing still, which is both true and what would have been written had the sweep gone first. `false` restores the stock behaviour, crash included. |
 | `guardRemovedSplits` | `true` | Whether a sub-level Sable has already removed is allowed to go on splitting itself. Sable marks a build removed the moment its last mass goes, but only collects removed builds once every build has ticked; a build this mod empties is emptied after that sweep has run for the tick, so the dead build gets one more tick of its own, finishes its connectivity check and tries to assemble what it found inside a plot that no longer exists. Sable answers that by throwing, on the server thread, which ends the world. `false` restores the stock behaviour, crash included. |
+
+### Anchoring
+
+Section `[anchor]`. See [Anchoring](#anchoring-a-wreck-that-stays-in-the-world-long-enough-to-finish-coming-apart).
+
+| Option | Default | |
+|---|---|---|
+| `hold` | `true` | Whether a build this mod has damaged keeps the chunks under it ticking until it has settled. `false` is the pre-1.9.5 behaviour. |
+| `ticks` | `200` | How long a build stays anchored after the last block it lost. |
+| `chunks` | `256` | The most chunk columns one build may hold. A wider build is left alone. |
 
 ### Collapse
 

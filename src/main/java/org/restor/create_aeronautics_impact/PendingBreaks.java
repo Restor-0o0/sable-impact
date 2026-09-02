@@ -206,6 +206,7 @@ public final class PendingBreaks {
         }
         Sever.resolve(level, tuning);
         Splitter.resolve(level, tuning);
+        Anchor.resolve(level, tuning);
     }
 
     /**

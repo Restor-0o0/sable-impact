@@ -121,6 +121,7 @@ public final class BuildDamage {
             return false;
         }
         Splitter.damaged(level, subLevel);
+        Anchor.damaged(level, subLevel);
         if (!tuning.protectBuilds()) {
             return true;
         }
