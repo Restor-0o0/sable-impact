@@ -31,6 +31,7 @@
   "create_aeronautics_impact.configuration.brittleThreshold": "Brittle Threshold",
   "create_aeronautics_impact.configuration.brittleTransmit": "Brittle Transmit",
   "create_aeronautics_impact.configuration.cacheChunks": "Cache Chunks",
+  "create_aeronautics_impact.configuration.builds": "Builds",
   "create_aeronautics_impact.configuration.chunks": "Chunks",
   "create_aeronautics_impact.configuration.carveLookaheadTicks": "Carve Lookahead Ticks",
   "create_aeronautics_impact.configuration.carveMaxBlocks": "Carve Maximum Blocks",

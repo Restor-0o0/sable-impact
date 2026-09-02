@@ -70,6 +70,9 @@ public final class ImpactStats {
     private static long boundsRebuilt;
     private static long glassScanned;
     private static long glassBroken;
+    private static long anchorBuilds;
+    private static long anchorColumns;
+    private static int anchorPeak;
 
     /**
      * The four jobs a sweep does, timed apart.
@@ -161,6 +164,22 @@ public final class ImpactStats {
     public static void addBounds(final int rebuilt) {
         if (enabled()) {
             boundsRebuilt += rebuilt;
+        }
+    }
+
+    /**
+     * What the anchor is holding, this tick.
+     *
+     * <p>Both numbers are summed over the window and reported per tick, which for something refreshed every
+     * tick reads as an average of how many builds and how much ground were held at once. The peak is kept
+     * beside them because the average hides the moment worth knowing about: a wreck breaking into a dozen
+     * pieces holds thirty times what the same wreck held whole, and only for a second or two.
+     */
+    public static void addAnchored(final int builds, final int columns) {
+        if (enabled()) {
+            anchorBuilds += builds;
+            anchorColumns += columns;
+            anchorPeak = Math.max(anchorPeak, columns);
         }
     }
 
@@ -334,6 +353,11 @@ public final class ImpactStats {
                     Math.round(glassScanned / ticks), Math.round(glassBroken / ticks));
         }
 
+        if (anchorColumns > 0) {
+            LOG.info("impact: anchoring held {} builds and {} chunk columns per tick, peaking at {} columns",
+                    Math.round(anchorBuilds / ticks), Math.round(anchorColumns / ticks), anchorPeak);
+        }
+
         if (crushMass > 0.0) {
             LOG.info("impact: crush mass {}, footprint {} blocks, pressure {}, {} contacts, {} under and {} side crushed",
                     Math.round(crushMass), String.format("%.1f", crushFootprint),
@@ -377,6 +401,9 @@ public final class ImpactStats {
         boundsRebuilt = 0L;
         glassScanned = 0L;
         glassBroken = 0L;
+        anchorBuilds = 0L;
+        anchorColumns = 0L;
+        anchorPeak = 0;
         worstMineNanos = 0L;
         worstDetail = 0;
         for (int phase = 0; phase < PHASE_NANOS.length; phase++) {

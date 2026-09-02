@@ -7,8 +7,11 @@ import net.minecraft.server.level.TicketType;
 import net.minecraft.util.Mth;
 import net.minecraft.world.level.ChunkPos;
 
+import java.util.ArrayList;
+import java.util.Comparator;
 import java.util.HashMap;
 import java.util.Iterator;
+import java.util.List;
 import java.util.Map;
 import java.util.UUID;
 import java.util.WeakHashMap;
@@ -33,6 +36,15 @@ import java.util.WeakHashMap;
  * which is the same level Sable's own test asks about. The ticket has a lifespan of its own, so nothing here
  * can leak a force-loaded chunk through a crash or a missed removal: stop refreshing it and it is gone within
  * two seconds, whatever happened to the code that took it out.
+ *
+ * <p>Keep, never fetch. A region ticket at block-ticking level does not merely hold a chunk that is there; on
+ * one that is not, it is the whole of what {@code /forceload} does, and the chunk is generated. A wreck falling
+ * out over unvisited ground would then pull in every column it passed over, and the generation that follows
+ * puts the server further behind than the stall it was avoiding - which pushes ticket levels out slower, which
+ * makes Sable's test fail sooner, which unloads builds at a shorter distance than before any of this. So every
+ * column is checked against {@code getChunkNow} first and skipped if it is not already resident. What is not
+ * loaded is not this mod's to load; a wreck over unloaded ground goes back to being Sable's problem, handled
+ * the way it always was.
  */
 public final class Anchor {
 
@@ -72,24 +84,45 @@ public final class Anchor {
         }
 
         final long now = level.getGameTime();
+        final List<ServerSubLevel> live = new ArrayList<>(builds.size());
         final Iterator<Map.Entry<ServerSubLevel, Long>> entries = builds.entrySet().iterator();
         while (entries.hasNext()) {
             final Map.Entry<ServerSubLevel, Long> entry = entries.next();
-            final ServerSubLevel subLevel = entry.getKey();
-            if (subLevel.isRemoved() || now - entry.getValue() > tuning.anchorTicks()) {
+            if (entry.getKey().isRemoved() || now - entry.getValue() > tuning.anchorTicks()) {
                 entries.remove();
                 continue;
             }
-            if (tuning.anchor()) {
-                hold(level, subLevel, tuning.anchorChunks());
-            }
+            live.add(entry.getKey());
         }
         if (builds.isEmpty()) {
             HELD.remove(level);
         }
+        if (!tuning.anchor() || live.isEmpty()) {
+            return;
+        }
+
+        // A battle drops more wrecks than a crash does, and the ones still losing blocks are the ones a stall
+        // would cost the most. Sorting only when the cap actually bites keeps this off the common path.
+        if (live.size() > tuning.anchorBuilds()) {
+            live.sort(Comparator.comparingLong((final ServerSubLevel held) -> builds.get(held)).reversed());
+        }
+
+        int anchored = 0;
+        int columns = 0;
+        for (final ServerSubLevel subLevel : live) {
+            if (anchored >= tuning.anchorBuilds()) {
+                break;
+            }
+            final int held = hold(level, subLevel, tuning.anchorChunks());
+            if (held > 0) {
+                anchored++;
+                columns += held;
+            }
+        }
+        ImpactStats.addAnchored(anchored, columns);
     }
 
-    private static void hold(final ServerLevel level, final ServerSubLevel subLevel, final int budget) {
+    private static int hold(final ServerLevel level, final ServerSubLevel subLevel, final int budget) {
         final BoundingBox3dc bounds = subLevel.boundingBox();
         final int minX = Mth.floor(bounds.minX() - 1.0) >> 4;
         final int maxX = Mth.floor(bounds.maxX() + 1.0) >> 4;
@@ -99,14 +132,20 @@ public final class Anchor {
         // A build wide enough to need more columns than this is one that holding still would cost more than
         // dropping, so it is left to Sable to handle the way it always did.
         if ((long) (maxX - minX + 1) * (maxZ - minZ + 1) > budget) {
-            return;
+            return 0;
         }
 
         final UUID id = subLevel.getUniqueId();
+        int held = 0;
         for (int x = minX; x <= maxX; x++) {
             for (int z = minZ; z <= maxZ; z++) {
+                if (level.getChunkSource().getChunkNow(x, z) == null) {
+                    continue;
+                }
                 level.getChunkSource().addRegionTicket(WRECK, new ChunkPos(x, z), RADIUS, id);
+                held++;
             }
         }
+        return held;
     }
 }

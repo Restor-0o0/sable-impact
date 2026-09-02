@@ -1591,6 +1591,10 @@ public final class ImpactConfig {
                     "settled. The ticket is taken at block-ticking level, which is the level Sable's own",
                     "test asks about, and it carries a lifespan of its own - so nothing here can leave a",
                     "chunk loaded behind it, through a crash or otherwise.",
+                    "Only chunks that are already loaded are held. A column that is not there is not pulled",
+                    "in: generating ground under a falling wreck costs more than the stall it would save,",
+                    "and puts the server far enough behind that builds start unloading closer in, not",
+                    "further out. A wreck over unloaded ground is left to Sable to handle as it always did.",
                     "Off restores the stock behaviour, vanishing included.")
             .define("hold", true);
 
@@ -1603,8 +1607,16 @@ public final class ImpactConfig {
     public static final ModConfigSpec.IntValue ANCHOR_CHUNKS = BUILDER
             .comment("The most chunk columns one build may hold. A build whose footprint is wider than this",
                     "is left alone entirely, on the grounds that holding that much of the world open costs",
-                    "more than the stall it would have saved.")
-            .defineInRange("chunks", 256, 1, 16384);
+                    "more than the stall it would have saved. Sixty-four columns is a build sixteen chunks",
+                    "on a side, which is larger than anything the stall was a problem for.")
+            .defineInRange("chunks", 64, 1, 16384);
+
+    public static final ModConfigSpec.IntValue ANCHOR_BUILDS = BUILDER
+            .comment("The most builds one dimension may anchor at once. A battle drops more wrecks than a",
+                    "crash does, and past some number of them holding the ground still under all of them is",
+                    "worse for the tick than letting the far ones go. When more than this are in hand, the",
+                    "ones that lost a block most recently are kept.")
+            .defineInRange("builds", 16, 1, 1024);
 
     static {
         BUILDER.pop();
@@ -2083,6 +2095,7 @@ public final class ImpactConfig {
                          boolean anchor,
                          int anchorTicks,
                          int anchorChunks,
+                         int anchorBuilds,
                          int backingMemoTicks,
                          int maxContactsPerTick,
                          boolean blockUpdates,
@@ -2274,6 +2287,7 @@ public final class ImpactConfig {
                     ANCHOR.get(),
                     ANCHOR_TICKS.get(),
                     ANCHOR_CHUNKS.get(),
+                    ANCHOR_BUILDS.get(),
                     BACKING_MEMO_TICKS.get(),
                     MAX_CONTACTS_PER_TICK.get(),
                     BLOCK_UPDATES.get(),

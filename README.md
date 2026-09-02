@@ -883,9 +883,18 @@ the level Sable's own test asks about. It is refreshed for as long as the build 
 serves, so nothing here can leave a chunk held open behind it - through a crash, a config reload, or a bug in
 this file. Stop refreshing and it is gone in two seconds regardless.
 
+Only ground that is already loaded is held. This matters more than it sounds like it should: a chunk ticket at
+block-ticking level does not merely keep a chunk that is there, it generates one that is not - that is all
+`/forceload` is. A wreck falling out over unvisited terrain would drag in every column it passed over, and 1.9.5
+did exactly that. The generation costs more than the stall it was avoiding, and it costs it on the server
+thread, so ticket levels propagate slower, so Sable's test fails sooner, so builds vanish at a *shorter*
+distance than with no anchoring at all. Since 1.9.6 every column is checked first and skipped if it is not
+already resident. A wreck over unloaded ground is Sable's problem again, handled the way it always was.
+
 A build wider than `chunks` columns is left alone entirely, on the grounds that holding that much of the world
-open costs more than the stall it would have saved. Set `hold = false` for the pre-1.9.5 behaviour, vanishing
-included.
+open costs more than the stall it would have saved, and no more than `builds` of them are anchored at once -
+past that the ones still losing blocks are kept and the rest let go. Set `hold = false` for the pre-1.9.5
+behaviour, vanishing included.
 
 ## Load bearing: what holds the world up
 
@@ -1306,7 +1315,8 @@ Section `[anchor]`. See [Anchoring](#anchoring-a-wreck-that-stays-in-the-world-l
 |---|---|---|
 | `hold` | `true` | Whether a build this mod has damaged keeps the chunks under it ticking until it has settled. `false` is the pre-1.9.5 behaviour. |
 | `ticks` | `200` | How long a build stays anchored after the last block it lost. |
-| `chunks` | `256` | The most chunk columns one build may hold. A wider build is left alone. |
+| `chunks` | `64` | The most chunk columns one build may hold. A wider build is left alone. |
+| `builds` | `16` | The most builds one dimension may anchor at once. Over that, the ones damaged most recently are kept. |
 
 ### Collapse
 
