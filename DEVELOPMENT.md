@@ -108,7 +108,7 @@ pass is stopped by it exactly once instead of finding the ground gone mid-step.
 | `Collapse.java` | What a build sheds after the crash is over, one column at a time, over a front sized to the landing that armed it. |
 | `Splitter.java` | Runs Sable's connectivity search extra times on builds this mod has damaged, so a wreck comes apart on the tick it was severed rather than a minute later. |
 | `Ligament.java` | Pure solver: given the size and strength of every cross-section of a build, which one is too thin to hold what hangs off it. No Minecraft, so it is unit-tested. |
-| `Anchor.java` | Holds a chunk ticket on the ground under a build this mod has damaged, so a wreck cannot be serialised out of the world half-way through coming apart. |
+| `Anchor.java` | Holds a chunk ticket on the ground under a build, so neither a wreck half-way through coming apart nor the cluster it is parked in can be serialised out of the world. Only ever ticks chunks that are already loaded. |
 | `Sever.java` | Walks a damaged build's blocks itself: hands Sable the pieces it has actually come into, and breaks the joint a build has no business still hanging from. |
 | `LoadPath.java` | Pure solver: routes every cell in a box of blocks to whatever is holding it up and adds the weight along the route. No Minecraft, so it is unit-tested. |
 | `Bearing.java` | Runs `LoadPath` over the world by region: seeds the load a build is resting with, breaks what is overloaded or unsupported, and re-solves until nothing more falls. |

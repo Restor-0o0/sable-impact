@@ -862,7 +862,8 @@ anything in a long fall. Set `freeFallQuiet = false` for the pre-1.9.4 behaviour
 
 Sable will only tick a build in chunks the server is ticking blocks in. That is simulation distance, not
 render distance, and the two are set separately - so a build can be well inside what you can see and outside
-what the server is willing to run.
+what the server is willing to run. Anything that loads chunks past the ticking edge, no-tick view distance
+included, widens that band: the terrain is on screen, and the ship standing on it is not.
 
 A build that crosses that line is not paused. It is serialised out whole into a holding chunk, taken out of
 the container, and its plot torn down; from the outside the ship is simply gone, and the server goes on
@@ -891,10 +892,27 @@ thread, so ticket levels propagate slower, so Sable's test fails sooner, so buil
 distance than with no anchoring at all. Since 1.9.6 every column is checked first and skipped if it is not
 already resident. A wreck over unloaded ground is Sable's problem again, handled the way it always was.
 
-A build wider than `chunks` columns is left alone entirely, on the grounds that holding that much of the world
-open costs more than the stall it would have saved, and no more than `builds` of them are anchored at once -
-past that the ones still losing blocks are kept and the rest let go. Set `hold = false` for the pre-1.9.5
-behaviour, vanishing included.
+### Clusters leave together
+
+Sable does not unload one build. `moveToUnloaded` walks `getLoadingDependencyChain`, the transitive closure of
+bounding-box overlap, and serialises out everything it reaches. Builds parked touching each other are one
+cluster, and a single column under any one of them dropping out of block-ticking takes the whole cluster out in
+the same tick.
+
+That is why activating one build can make every other build near it vanish at once, and why whatever was
+supposed to land on them falls through instead: they are not in the world any more, so there is nothing to
+hit. They come back at the pose they were saved at, which by then is inside whatever landed where they were
+standing. Nothing about this is subtle once you know to look for it, and it is why anchoring half a cluster is
+worth nothing - the unheld half takes the held half with it.
+
+So `chain = true` pulls a damaged build's whole cluster into the anchor with it, and `all = true` anchors every
+build in the world rather than only the ones this mod has broken, because a parked airship is torn out by the
+same rule a wreck is and has no way to ask for the ground under it.
+
+The caps are what keeps that honest. A build wider than `chunks` columns is left alone entirely, on the grounds
+that holding that much of the world open costs more than the stall it would have saved; no more than `builds`
+are anchored at once, damaged ones first; and `total` is the ceiling on chunk columns held across the whole
+dimension whatever the other two allow. Set `hold = false` for the pre-1.9.5 behaviour, vanishing included.
 
 ## Load bearing: what holds the world up
 
@@ -1316,7 +1334,10 @@ Section `[anchor]`. See [Anchoring](#anchoring-a-wreck-that-stays-in-the-world-l
 | `hold` | `true` | Whether a build this mod has damaged keeps the chunks under it ticking until it has settled. `false` is the pre-1.9.5 behaviour. |
 | `ticks` | `200` | How long a build stays anchored after the last block it lost. |
 | `chunks` | `64` | The most chunk columns one build may hold. A wider build is left alone. |
-| `builds` | `16` | The most builds one dimension may anchor at once. Over that, the ones damaged most recently are kept. |
+| `builds` | `32` | The most builds one dimension may anchor at once. Over that, the ones damaged most recently are kept. |
+| `all` | `true` | Whether every build is anchored rather than only the damaged ones. `false` is the 1.9.5-1.9.6 behaviour. |
+| `chain` | `true` | Whether a damaged build drags its whole overlap cluster into the anchor. See [Clusters leave together](#clusters-leave-together). |
+| `total` | `256` | The most chunk columns one dimension may hold across all builds at once. |
 
 ### Collapse
 

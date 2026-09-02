@@ -1616,7 +1616,31 @@ public final class ImpactConfig {
                     "crash does, and past some number of them holding the ground still under all of them is",
                     "worse for the tick than letting the far ones go. When more than this are in hand, the",
                     "ones that lost a block most recently are kept.")
-            .defineInRange("builds", 16, 1, 1024);
+            .defineInRange("builds", 32, 1, 1024);
+
+    public static final ModConfigSpec.BooleanValue ANCHOR_ALL = BUILDER
+            .comment("Whether every build in the world is anchored, rather than only the ones this mod has",
+                    "damaged. A parked airship is torn out of the world by the same rule a wreck is, and a",
+                    "build that has lost nothing has no way to ask for the ground under it - so on this",
+                    "setting it does not have to. Costs a ticket refresh per loaded column under each build",
+                    "per tick, bounded by the two caps above and the one below.",
+                    "Off anchors only what this mod has broken, which is the 1.9.5 and 1.9.6 behaviour.")
+            .define("all", true);
+
+    public static final ModConfigSpec.BooleanValue ANCHOR_CHAIN = BUILDER
+            .comment("Whether a damaged build drags its whole cluster into the anchor with it.",
+                    "Sable does not unload one build. It walks the transitive closure of bounding-box",
+                    "overlap and serialises out everything it reaches, so builds parked touching each other",
+                    "leave together the instant one column under any of them stops block-ticking. Anchoring",
+                    "half a cluster is therefore worth nothing - the unheld half takes the held half with it.",
+                    "Off treats every build as its own, which is cheaper and wrong in a hangar.")
+            .define("chain", true);
+
+    public static final ModConfigSpec.IntValue ANCHOR_TOTAL = BUILDER
+            .comment("The most chunk columns one dimension may hold across all builds at once. The ceiling on",
+                    "the whole feature: whatever the other caps allow, the anchor stops taking new columns",
+                    "here. Columns it is already holding go on being refreshed.")
+            .defineInRange("total", 256, 1, 65536);
 
     static {
         BUILDER.pop();
@@ -2096,6 +2120,9 @@ public final class ImpactConfig {
                          int anchorTicks,
                          int anchorChunks,
                          int anchorBuilds,
+                         boolean anchorAll,
+                         boolean anchorChain,
+                         int anchorTotal,
                          int backingMemoTicks,
                          int maxContactsPerTick,
                          boolean blockUpdates,
@@ -2288,6 +2315,9 @@ public final class ImpactConfig {
                     ANCHOR_TICKS.get(),
                     ANCHOR_CHUNKS.get(),
                     ANCHOR_BUILDS.get(),
+                    ANCHOR_ALL.get(),
+                    ANCHOR_CHAIN.get(),
+                    ANCHOR_TOTAL.get(),
                     BACKING_MEMO_TICKS.get(),
                     MAX_CONTACTS_PER_TICK.get(),
                     BLOCK_UPDATES.get(),

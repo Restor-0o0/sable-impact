@@ -14,6 +14,7 @@
   "create_aeronautics_impact.configuration.compat": "Compatibility",
   "create_aeronautics_impact.configuration.anchor": "Anchoring",
   "create_aeronautics_impact.configuration.adaptiveDetail": "Adaptive Detail",
+  "create_aeronautics_impact.configuration.all": "All",
   "create_aeronautics_impact.configuration.backing": "Backing",
   "create_aeronautics_impact.configuration.backingBeside": "Backing Beside",
   "create_aeronautics_impact.configuration.backingMemoTicks": "Backing Memo Ticks",
@@ -31,6 +32,7 @@
   "create_aeronautics_impact.configuration.brittleThreshold": "Brittle Threshold",
   "create_aeronautics_impact.configuration.brittleTransmit": "Brittle Transmit",
   "create_aeronautics_impact.configuration.cacheChunks": "Cache Chunks",
+  "create_aeronautics_impact.configuration.chain": "Chain",
   "create_aeronautics_impact.configuration.builds": "Builds",
   "create_aeronautics_impact.configuration.chunks": "Chunks",
   "create_aeronautics_impact.configuration.carveLookaheadTicks": "Carve Lookahead Ticks",
@@ -201,5 +203,6 @@
   "create_aeronautics_impact.configuration.sweepScanBudget": "Sweep Scan Budget",
   "create_aeronautics_impact.configuration.terrainScale": "Terrain Scale",
   "create_aeronautics_impact.configuration.ticks": "Ticks",
+  "create_aeronautics_impact.configuration.total": "Total",
   "create_aeronautics_impact.configuration.volume": "Volume"
 }
