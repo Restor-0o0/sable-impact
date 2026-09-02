@@ -112,6 +112,9 @@ public final class HullSweeper {
      */
     private static final int CLEAR_MARGIN = 4;
 
+    /** Descent (m/s) past which a hull is falling rather than hovering, and gets the longer quiet window. */
+    private static final double FALLING_SPEED = 4.0;
+
     /**
      * Blocks per tick of descent credited to a hull on top of the speed it already has.
      *
@@ -533,6 +536,11 @@ public final class HullSweeper {
      * only cheaper but the same answer. What it must not do is be wrong, hence the margin and the cap: the
      * reading has to hold across every tick it is trusted for, and it is never trusted for long.
      *
+     * <p>A hull dropped from a height falls fast and drifts barely at all, so the two bounds are wildly
+     * unequal and the sideways one is what binds: two hundred blocks of air below is worth five seconds and
+     * four blocks of margin is worth one. So the margin is chosen against the drop rather than fixed, and one
+     * wider reading stands in for the five narrower ones that would have been taken during the same fall.
+     *
      * @return ticks the hull may be skipped for, or 0 to do the work now.
      */
     private static int quietTicks(final ServerLevel level,
@@ -543,19 +551,45 @@ public final class HullSweeper {
             return 0;
         }
 
-        final int minX = (int) Math.floor(bounds.minX()) - CLEAR_MARGIN;
-        final int maxX = (int) Math.floor(bounds.maxX()) + CLEAR_MARGIN;
-        final int minZ = (int) Math.floor(bounds.minZ()) - CLEAR_MARGIN;
-        final int maxZ = (int) Math.floor(bounds.maxZ()) + CLEAR_MARGIN;
+        final ImpactConfig.Tuning tuning = ImpactConfig.tuning();
+        final double falling = Math.max(0.0, -velocity.y) / 20.0 + QUIET_FALL_ALLOWANCE;
+        final double drifting = Math.sqrt(velocity.x * velocity.x + velocity.z * velocity.z) / 20.0
+                + QUIET_DRIFT_ALLOWANCE;
+        final int cap = tuning.freeFallQuiet() && -velocity.y >= FALLING_SPEED
+                ? tuning.maxFallQuietTicks()
+                : tuning.maxQuietTicks();
 
         // A landed build has ground under its middle, so asking there first is what keeps this from being a
         // second full column scan on top of the one the crush pass already does.
-        final int midX = (minX + maxX) >> 1;
-        final int midZ = (minZ + maxZ) >> 1;
+        final int midX = (int) Math.floor((bounds.minX() + bounds.maxX()) * 0.5);
+        final int midZ = (int) Math.floor((bounds.minZ() + bounds.maxZ()) * 0.5);
         final LevelChunk middle = level.getChunkSource().getChunkNow(midX >> 4, midZ >> 4);
-        if (middle == null || middle.getHeight(GROUND, midX, midZ) >= floor) {
+        if (middle == null) {
             return 0;
         }
+        final int under = floor - middle.getHeight(GROUND, midX, midZ);
+        if (under <= 0) {
+            return 0;
+        }
+
+        // How far to look sideways. A wider reading costs the square of the margin and is good for the
+        // margin itself, so it stops paying its way where those meet - at half the geometric mean of the
+        // footprint, which is why this is a win for a ship and a waste for a cart. Past the point where the
+        // drop below runs out first it buys nothing either. The scan decides the real drop and the window is
+        // taken against that, so a middle column over a chasm beside a peak buys a wide reading and a short
+        // window rather than a wrong one.
+        int margin = CLEAR_MARGIN;
+        if (tuning.freeFallQuiet()) {
+            final double worth = Math.sqrt((bounds.maxX() - bounds.minX()) * (bounds.maxZ() - bounds.minZ()));
+            final double enough = drifting * Math.min(cap, under / falling);
+            margin = (int) Math.min(tuning.quietMargin(),
+                    Math.max(CLEAR_MARGIN, Math.ceil(Math.min(worth * 0.5, enough))));
+        }
+
+        final int minX = (int) Math.floor(bounds.minX()) - margin;
+        final int maxX = (int) Math.floor(bounds.maxX()) + margin;
+        final int minZ = (int) Math.floor(bounds.minZ()) - margin;
+        final int maxZ = (int) Math.floor(bounds.maxZ()) + margin;
 
         int gap = Integer.MAX_VALUE;
         for (int cx = minX >> 4; cx <= maxX >> 4; cx++) {
@@ -598,11 +632,8 @@ public final class HullSweeper {
         // thing useless exactly where it was wanted: a hull dropped from a height falls fast and drifts
         // barely at all, so a margin of four blocks against its speed bought back a single tick out of a
         // fall of two hundred. Downwards it has the whole gap to cross; sideways it has the margin.
-        final double falling = Math.max(0.0, -velocity.y) / 20.0 + QUIET_FALL_ALLOWANCE;
-        final double drifting = Math.sqrt(velocity.x * velocity.x + velocity.z * velocity.z) / 20.0
-                + QUIET_DRIFT_ALLOWANCE;
-        final double ticks = Math.min(gap / falling, CLEAR_MARGIN / drifting);
-        return (int) Math.min(ImpactConfig.tuning().maxQuietTicks(), ticks);
+        final double ticks = Math.min(gap / falling, margin / drifting);
+        return (int) Math.min(cap, ticks);
     }
 
     /**

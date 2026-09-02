@@ -188,6 +188,7 @@ Ordered by how much they save, and by how visible the cost is:
 | `sweepFinestDetail = 1` | Close to a third of the sweep. | Holes come out rounder and wider than the thing that made them. |
 | `backingMemoTicks = 4` | A lot on hulls with thousands of contacts. | A block briefly holds as though the hillside behind it were still there. |
 | `maxQuietTicks = 60` | A lot on worlds full of parked airships. | A tower thrown up under a hovering build goes unnoticed for up to three seconds. |
+| `maxFallQuietTicks = 200` | A lot on anything in a long fall, on top of what `freeFallQuiet` already saves. | Ground generated under a falling build goes unnoticed for up to ten seconds, which is most of a fall from the build limit. |
 | `clearSoftBlocks = false` | A swept slab per axis on every moving hull. | Grass and flowers stay standing where a hull has been. Nothing is stopped by them either way. |
 | `crushBlocks = false` | The whole weight model. | Stationary and slow-moving builds stop marking the ground at all. |
 
@@ -830,6 +831,33 @@ the wall-clock ceiling on all of it per level per tick.
 Set `separate = false` and `ligament = false` for the pre-1.9.3 behaviour, where whether a wreck is one build
 or two is entirely Sable's answer to give.
 
+## Falling costs nothing
+
+A hull with two hundred blocks of air under it has nothing for any pass in this mod to do. Crushing finds no
+ground, carving finds no terrain, the soft sweep finds no grass. All of them find that out separately, and
+all of them find it out again next tick.
+
+So it is asked once, from the heightmap: if the top of every column within reach is below the hull's floor,
+there is nothing under it - and nothing above it either, since by definition nothing is above a column's top.
+The hull is then left entirely alone for as long as that reading can be trusted, which is until it could have
+crossed the drop below or drifted off the edge of what was read.
+
+Those two bounds are wildly unequal, and until 1.9.4 the wrong one was binding. A hull falling at thirty
+metres a second drifts barely at all, so the drop was worth five seconds and the four-block margin was worth
+one - and the margin won, so a fall of two hundred blocks paid for five readings where one would have done.
+Now the margin is chosen against the fall: wide enough that the drop below runs out first, and no wider than
+it is worth, which is half the geometric mean of the footprint. Past that point the reading costs more, as
+the square of the margin, than the time it buys, which is linear in it. So a ship gets a wide reading and a
+cart keeps the narrow one it always had.
+
+A hull that is falling is also capped separately from one that is hovering (`maxFallQuietTicks` against
+`maxQuietTicks`), because what the cap guards against is ground appearing where the reading said there was
+none - which is a real risk under a build somebody is living on and very nearly none under one going past at
+terminal velocity.
+
+Nothing about what breaks changes. It is the same answer, arrived at three to five times more cheaply on
+anything in a long fall. Set `freeFallQuiet = false` for the pre-1.9.4 behaviour.
+
 ## Load bearing: what holds the world up
 
 Everything above prices a block against the thing that hit it. That is the whole of an impact and none of a
@@ -1430,6 +1458,9 @@ Everything under `[debris]`. The chapter on it is [above](#debris-what-flies-and
 | `sweepFinestDetail` | `0` | The finest rung the sweep may sample at, `0`–`3`. Higher is cheaper and rounder. |
 | `coarseSweepTravel` | `2.0` | Travel per window, in blocks, past which a hull is swept coarsely whatever the server is doing. |
 | `maxQuietTicks` | `20` | The longest a hull with nothing near it may be left unswept. |
+| `freeFallQuiet` | `true` | Whether that reading is sized against the fall rather than fixed at four blocks. See [Falling costs nothing](#falling-costs-nothing). `false` is the pre-1.9.4 behaviour. |
+| `quietMargin` | `24` | The widest that reading may be taken, in blocks to either side of the hull. A ceiling, not a target. |
+| `maxFallQuietTicks` | `100` | The cap on the window for a hull that is falling, as against one hovering or parked. |
 | `backingMemoTicks` | `1` | How many ticks a backing reading is kept for. |
 | `maxContactsPerTick` | `0` | How many contacts are examined per tick before the rest are waved through. `0` is unlimited. |
 | `blockUpdates` | `true` | Whether a silent removal still notifies its neighbours. Off is the largest single saving here. |

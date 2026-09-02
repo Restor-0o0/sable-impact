@@ -1792,6 +1792,37 @@ public final class ImpactConfig {
                     "costs is that a tower thrown up under a hovering build goes unnoticed for that long.")
             .defineInRange("maxQuietTicks", 20, 1, 200);
 
+    public static final ModConfigSpec.BooleanValue FREE_FALL_QUIET = BUILDER
+            .comment("Whether a hull crossing open air is measured for the whole crossing at once instead of a",
+                    "fixed few blocks at a time.",
+                    "The reading that lets a hull be left alone is bounded two ways: by the drop below it, and",
+                    "by how far it may drift sideways before it leaves the ground the reading speaks for. The",
+                    "second is what binds, and it binds absurdly: a hull falling at thirty metres a second with",
+                    "nothing under it for two hundred blocks could be trusted for five seconds, and is trusted",
+                    "for one, because the reading only covers four blocks to either side of it and it might",
+                    "conceivably have drifted that far.",
+                    "So the reading is widened to match the fall rather than the tick. One scan over a slightly",
+                    "larger footprint replaces four or five scans over a smaller one, and the whole of it -",
+                    "crushing, carving, the soft sweep - stays skipped for as long as the geometry says it may",
+                    "be. Nothing about what breaks changes, because a hull with two hundred blocks of air under",
+                    "it has nothing to break in any of those passes.",
+                    "Off is the pre-1.9.4 behaviour: four blocks of margin and a fresh scan every second.")
+            .define("freeFallQuiet", true);
+
+    public static final ModConfigSpec.IntValue QUIET_MARGIN = BUILDER
+            .comment("The widest the reading may be taken, in blocks to either side of the hull. The scan costs a",
+                    "column per block of footprint, so this grows the cost of one reading as a square while it",
+                    "grows the time the reading is good for in a straight line - which is still a large win",
+                    "while the margin is small against the build, and stops being one once it is not.")
+            .defineInRange("quietMargin", 24, 4, 128);
+
+    public static final ModConfigSpec.IntValue MAX_FALL_QUIET_TICKS = BUILDER
+            .comment("The cap on that window for a hull that is falling, as against one hovering or parked. They",
+                    "are capped separately because the thing the cap guards against is ground appearing where",
+                    "the reading said there was none, and that is a real risk under a build somebody is living",
+                    "on and very nearly none under one going past at terminal velocity.")
+            .defineInRange("maxFallQuietTicks", 100, 1, 600);
+
     public static final ModConfigSpec.IntValue BACKING_MEMO_TICKS = BUILDER
             .comment("How many ticks a backing reading is kept for. What is behind a block is the slowest-changing",
                     "thing there is, except where a hull is currently eating it - which is precisely where this",
@@ -2005,6 +2036,9 @@ public final class ImpactConfig {
                          int stuckGraceTicks,
                          int grindStuckTicks,
                          int maxQuietTicks,
+                         boolean freeFallQuiet,
+                         int quietMargin,
+                         int maxFallQuietTicks,
                          int backingMemoTicks,
                          int maxContactsPerTick,
                          boolean blockUpdates,
@@ -2190,6 +2224,9 @@ public final class ImpactConfig {
                     STUCK_GRACE_TICKS.get(),
                     GRIND_STUCK_TICKS.get(),
                     MAX_QUIET_TICKS.get(),
+                    FREE_FALL_QUIET.get(),
+                    QUIET_MARGIN.get(),
+                    MAX_FALL_QUIET_TICKS.get(),
                     BACKING_MEMO_TICKS.get(),
                     MAX_CONTACTS_PER_TICK.get(),
                     BLOCK_UPDATES.get(),
