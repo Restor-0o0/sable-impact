@@ -1087,6 +1087,92 @@ public final class ImpactConfig {
     }
 
     static {
+        BUILDER.comment("Taking a build apart when it has stopped being one, and when what is left of it",
+                        "cannot hold itself up.",
+                        "Splitting above assumes Sable's connectivity search is right and merely slow, and",
+                        "for a build losing a block to a pickaxe it is. After a crash it is not. The search",
+                        "is an incremental distance field, not a flood fill from scratch: a block that goes",
+                        "away is compared against the heat its neighbours were left with, and a neighbour",
+                        "only becomes the root of a new region when no other neighbour of it is nearer the",
+                        "old root. On a hull losing a thousand blocks in four ticks that heat describes a",
+                        "build that no longer exists, and the answer it settles on is that nothing came",
+                        "apart - not late, but wrongly, and running it again cannot change it. What is on",
+                        "the screen is a wreck cut clean in half with daylight through the cut, flying in",
+                        "formation with itself.",
+                        "So the question is asked here instead, the one way that cannot be wrong: walk the",
+                        "blocks and see what is reachable from what. A build that comes back in more than",
+                        "one piece is handed to Sable's own assembly, piece by piece, exactly as Sable's own",
+                        "split would have handed it.",
+                        "The other half is about builds that have not come apart and have no business still",
+                        "being in one piece: the deck plank bridging a hull broken almost in half, the two",
+                        "blocks a gantry is pivoting on. Connectivity has nothing to say about those, since",
+                        "touching is a yes or a no and three blocks touch as firmly as three hundred.")
+                .push("sever");
+    }
+
+    public static final ModConfigSpec.BooleanValue SEVER_SEPARATE = BUILDER
+            .comment("Whether a build found to be in more than one piece is actually taken apart into that",
+                    "many builds. Turn it off and separation is left entirely to Sable, which after a crash",
+                    "means a wreck that stays whole for as long as it exists.")
+            .define("separate", true);
+
+    public static final ModConfigSpec.BooleanValue SEVER_LIGAMENT = BUILDER
+            .comment("Whether a joint too thin to carry what hangs off it is broken. This is the difference",
+                    "between a hull that is cracked and a hull that has come in two.")
+            .define("ligament", true);
+
+    public static final ModConfigSpec.BooleanValue SEVER_DIAGONALS = BUILDER
+            .comment("Whether two blocks touching along an edge alone count as joined. True is Sable's own",
+                    "rule, and keeping it means this pass only ever finds separations Sable agrees with.",
+                    "False is stricter than Sable: a build held together by corners comes apart, which",
+                    "looks right and will separate builds their makers meant to hold.")
+            .define("diagonals", true);
+
+    public static final ModConfigSpec.IntValue SEVER_INTERVAL = BUILDER
+            .comment("Ticks between two passes over the same build. A wreck keeps coming apart for a while",
+                    "after the landing, and this is how often that is noticed.")
+            .defineInRange("interval", 20, 1, 1200);
+
+    public static final ModConfigSpec.IntValue SEVER_VOLUME = BUILDER
+            .comment("The largest build, as the volume of its bounding box in blocks, that is looked at at",
+                    "all. The walk is one pass over that volume and costs a byte of memory per block of it.")
+            .defineInRange("volume", 1048576, 8, 67108864);
+
+    public static final ModConfigSpec.IntValue SEVER_PIECES = BUILDER
+            .comment("How many pieces of one build may be assembled into builds of their own in one pass.",
+                    "The largest piece always keeps the build it was already in, so the client has a body to",
+                    "trace the new ones back to; the rest wait for the next pass.")
+            .defineInRange("pieces", 4, 1, 64);
+
+    public static final ModConfigSpec.IntValue SEVER_MIN_SIDE = BUILDER
+            .comment("The fewest blocks a side of a cut may have and still count as a side. Below it a cut",
+                    "is not a build coming in half, it is a corner being trimmed off an intact one.")
+            .defineInRange("minSide", 24, 1, 1000000);
+
+    public static final ModConfigSpec.IntValue SEVER_NECK = BUILDER
+            .comment("The most blocks a cross-section may have and still be treated as a joint rather than",
+                    "as the body of the build. A hull's cross-section is hundreds of blocks and is dismissed",
+                    "on its count alone, which is what keeps this cheap.")
+            .defineInRange("neck", 24, 1, 4096);
+
+    public static final ModConfigSpec.DoubleValue SEVER_CARRY = BUILDER
+            .comment("How many blocks of build one point of a joint's resistance holds up. Resistance is the",
+                    "same measure of strength every break in this mod is priced against, so a joint is thin",
+                    "by what it is made of and not by how many blocks it has: four of obsidian outweigh",
+                    "forty of wood. Raise it and thinner joints stand; lower it and builds come apart at",
+                    "every waist.")
+            .defineInRange("carry", 40.0, 0.1, 1000000.0);
+
+    public static final ModConfigSpec.DoubleValue SEVER_MILLIS = BUILDER
+            .comment("Ceiling on what all of this may cost per level per tick, in milliseconds. Builds not",
+                    "reached inside it are looked at on a later tick.")
+            .defineInRange("millis", 2.0, 0.0, 50.0);
+
+    static {
+        BUILDER.pop();
+    }
+
+    static {
         BUILDER.comment("What a structure is standing on, and what happens to it when that stops being true.",
                         "Every other pass in this mod prices a block against the thing that hit it, which is",
                         "the whole of an impact and none of a structure. A gantry on two legs takes its whole",
@@ -1984,6 +2070,16 @@ public final class ImpactConfig {
                          int splitRounds,
                          int splitTicks,
                          double splitMillis,
+                         boolean severSeparate,
+                         boolean severLigament,
+                         boolean severDiagonals,
+                         int severInterval,
+                         int severVolume,
+                         int severPieces,
+                         int severMinSide,
+                         int severNeck,
+                         double severCarry,
+                         double severMillis,
                          boolean bearing,
                          double bearingBlockWeight,
                          double bearingPressureScale,
@@ -2159,6 +2255,16 @@ public final class ImpactConfig {
                     SPLIT_ROUNDS.get(),
                     SPLIT_TICKS.get(),
                     SPLIT_MILLIS.get(),
+                    SEVER_SEPARATE.get(),
+                    SEVER_LIGAMENT.get(),
+                    SEVER_DIAGONALS.get(),
+                    SEVER_INTERVAL.get(),
+                    SEVER_VOLUME.get(),
+                    SEVER_PIECES.get(),
+                    SEVER_MIN_SIDE.get(),
+                    SEVER_NECK.get(),
+                    SEVER_CARRY.get(),
+                    SEVER_MILLIS.get(),
                     BEARING.get(),
                     BEARING_BLOCK_WEIGHT.get(),
                     BEARING_PRESSURE_SCALE.get(),

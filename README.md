@@ -780,6 +780,56 @@ the wall-clock ceiling on all of it per level per tick, whatever the round count
 Set `resolve = false` and separation still happens, on Sable's own schedule, which on a wreck of any size is
 tens of seconds after the fact.
 
+## Severance: walking the blocks and asking outright
+
+Splitting above assumes Sable's connectivity search is right and merely slow. For a build losing a block to a
+pickaxe it is. After a crash it is not, and no amount of hurrying it helps, because what it needs is not more
+time.
+
+The search is not a flood fill from scratch. It is an incremental distance field: every block carries how far
+it is from the root of its region, and when a block is removed its neighbours are compared against the heat
+they were left with. A neighbour becomes the root of a new region only when no other neighbour of it is nearer
+the old root - a deliberately conservative test, and a correct one when blocks go one at a time, because then
+the heat around the hole is still true. On a hull losing a thousand blocks in four ticks it is not. The field
+describes a build that no longer exists, every candidate root fails the test against a neighbour that is
+itself already gone, and the search **finishes**, with `splitComplete` set and nothing found. Not late. Wrong.
+Running it again returns the same answer, because it is the same field. That is the wreck cut clean in half
+with daylight through the cut, flying in formation with itself.
+
+So the question is asked here instead, the one way that cannot be wrong: read the build's blocks into a grid
+and see what is reachable from what. It costs one pass over the bounding box and one byte per block of it,
+it is exact, and it has no memory to be stale. A build that comes back in more than one piece is handed to
+Sable's own assembly, piece by piece, exactly as Sable's own split would have handed it: the largest piece
+keeps the build it was already in, the split listeners are told first, pose and velocity carry over, and a
+piece that turns out to weigh nothing is destroyed rather than left as a ghost. Two blocks touching along an
+edge count as joined, because that is Sable's own rule and keeping it means this pass only ever forces
+separations Sable would agree with. `diagonals = false` is stricter than Sable and will part builds their
+makers meant to hold.
+
+The other half is the opposite problem: builds that have not come apart and have no business still being in
+one piece. Connectivity has nothing to say about a hull broken almost through and bridged by one deck plank,
+because touching is a yes or a no and three blocks touch as firmly as three hundred. So the walk is kept as
+layers - every block one step further from the far end of the build than the last - which makes each layer a
+cross-section, and removing a whole one provably parts everything before it from everything after it. A layer
+wider than `neck` is the body of the build and is dismissed on its count alone, which is what keeps this
+cheap. What is left is priced: the layer's summed resistance times `carry` is how many blocks it can hold,
+against the block count of the lighter side hanging off it. The worst-overloaded joint goes, ties broken
+toward the thinner one, and on a later pass the separation half finds the two halves and makes them two
+builds.
+
+`carry` is the dial that matters. Resistance is the same measure of strength every break in this mod is
+priced against, so a joint is thin by what it is made of and not by how many blocks it has: at the default
+`40`, two oak planks hold about a hundred and forty blocks and four of obsidian hold five thousand. Raise it
+and thinner joints stand; lower it and builds come apart at every waist.
+
+`minSide` is what stops a corner being trimmed off an intact build and called a cut in half, `volume` is the
+largest build looked at at all, `pieces` is how many new builds one pass may make, and `interval` is how often
+the same build is asked again, because a wreck keeps coming apart for a while after the landing. `millis` is
+the wall-clock ceiling on all of it per level per tick.
+
+Set `separate = false` and `ligament = false` for the pre-1.9.3 behaviour, where whether a wreck is one build
+or two is entirely Sable's answer to give.
+
 ## Load bearing: what holds the world up
 
 Everything above prices a block against the thing that hit it. That is the whole of an impact and none of a
@@ -1221,6 +1271,23 @@ Section `[split]`. See [Splitting](#splitting-telling-a-build-that-it-is-now-two
 | `rounds` | `24` | Extra passes of the connectivity search a damaged build gets per tick. A ceiling, not a workload: a finished search costs nothing. |
 | `ticks` | `200` | How long a build stays on the hurried list after the last block it lost. |
 | `millis` | `3.0` | Wall-clock ceiling on all of it per level per tick. |
+
+### Severance
+
+Section `[sever]`. See [Severance](#severance-walking-the-blocks-and-asking-outright).
+
+| Option | Default | |
+|---|---|---|
+| `separate` | `true` | Whether a build found to be in more than one piece is actually taken apart into that many builds. `false` leaves it to Sable, which after a crash means a wreck that stays whole for as long as it exists. |
+| `ligament` | `true` | Whether a joint too thin to carry what hangs off it is broken. The difference between a hull that is cracked and a hull that has come in two. |
+| `diagonals` | `true` | Whether two blocks touching along an edge alone count as joined. `true` is Sable's own rule. `false` is stricter than Sable. |
+| `interval` | `20` | Ticks between two passes over the same build. |
+| `volume` | `1048576` | The largest build, as the volume of its bounding box, that is looked at at all. Costs a byte per block of it. |
+| `pieces` | `4` | How many pieces of one build may become builds of their own in one pass. The largest piece always keeps the original. |
+| `minSide` | `24` | The fewest blocks a side of a cut may have and still count as a side. Below it a cut is a corner being trimmed off. |
+| `neck` | `24` | The most blocks a cross-section may have and still be treated as a joint rather than as the body of the build. |
+| `carry` | `40.0` | How many blocks one point of a joint's resistance holds up. Two oak planks hold about a hundred and forty. |
+| `millis` | `2.0` | Wall-clock ceiling on all of it per level per tick. |
 
 ### Load bearing
 

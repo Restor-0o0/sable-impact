@@ -107,6 +107,8 @@ pass is stopped by it exactly once instead of finding the ground gone mid-step.
 | `CrackNeck.java` | Pure solver: given what each cross-section within reach of a contact is holding, where along the axis to cut. No Minecraft, so it is unit-tested. |
 | `Collapse.java` | What a build sheds after the crash is over, one column at a time, over a front sized to the landing that armed it. |
 | `Splitter.java` | Runs Sable's connectivity search extra times on builds this mod has damaged, so a wreck comes apart on the tick it was severed rather than a minute later. |
+| `Ligament.java` | Pure solver: given the size and strength of every cross-section of a build, which one is too thin to hold what hangs off it. No Minecraft, so it is unit-tested. |
+| `Sever.java` | Walks a damaged build's blocks itself: hands Sable the pieces it has actually come into, and breaks the joint a build has no business still hanging from. |
 | `LoadPath.java` | Pure solver: routes every cell in a box of blocks to whatever is holding it up and adds the weight along the route. No Minecraft, so it is unit-tested. |
 | `Bearing.java` | Runs `LoadPath` over the world by region: seeds the load a build is resting with, breaks what is overloaded or unsupported, and re-solves until nothing more falls. |
 | `BuildDamage.java` | How much of a build one crash is allowed to take, and what it does when it has taken it. |
@@ -128,10 +130,11 @@ pass is stopped by it exactly once instead of finding the ground gone mid-step.
 | `mixin/PlotChunkHolderMixin.java` | Exposes Sable's private `buildBoundingBox` so `BoundsBatch` can call it. |
 | `mixin/SableCommonEventsMixin.java` | Sends Sable's own bounding-box rebuilds through `BoundsBatch` instead. |
 | `mixin/SubLevelHeatMapManagerMixin.java` | Stops a sub-level Sable has already removed from splitting itself into new ones. |
+| `mixin/SubLevelSplitListenersMixin.java` | Exposes Sable's private split-listener list so `Sever` can notify it the way Sable's own split does. |
 | `mixin/RigidBodyHandleMixin.java` | Lets a destroyed physics body report standing still, instead of throwing at the autosave that asked. |
 
 `src/test/java/…` — `ImpactResolverTest` (the bulk of it), `SweepDetailTest`, `BackingTest`, `ShockWaveTest`,
-`StressTest`, `LoadPathTest`, `CrackPlaneTest`, `CrackNeckTest`.
+`StressTest`, `LoadPathTest`, `CrackPlaneTest`, `CrackNeckTest`, `LigamentTest`.
 
 `src/main/resources/` — `impact_logo.png` at the jar root is the mod list entry's logo, named by
 `logoFile` in `neoforge.mods.toml`. Under `assets/create_aeronautics_impact/`, `lang/en_us.json` names every

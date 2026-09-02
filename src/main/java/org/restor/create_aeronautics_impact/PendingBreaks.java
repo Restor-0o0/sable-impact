@@ -204,6 +204,7 @@ public final class PendingBreaks {
         } finally {
             BoundsBatch.close();
         }
+        Sever.resolve(level, tuning);
         Splitter.resolve(level, tuning);
     }
 

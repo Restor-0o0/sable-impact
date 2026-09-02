@@ -32,6 +32,7 @@ import java.util.WeakHashMap;
 public final class Splitter {
 
     private static final Map<ServerLevel, Map<ServerSubLevel, Long>> DAMAGED = new WeakHashMap<>();
+    private static final ServerSubLevel[] EMPTY = new ServerSubLevel[0];
 
     private Splitter() {
     }
@@ -43,6 +44,20 @@ public final class Splitter {
      */
     public static void damaged(final ServerLevel level, final ServerSubLevel subLevel) {
         DAMAGED.computeIfAbsent(level, ignored -> new HashMap<>()).put(subLevel, level.getGameTime());
+    }
+
+    /**
+     * The builds this mod has damaged recently, as a snapshot.
+     *
+     * <p>A snapshot rather than the map itself because what reads this goes on to break blocks, and breaking
+     * a block writes back here.
+     */
+    static ServerSubLevel[] hurried(final ServerLevel level) {
+        final Map<ServerSubLevel, Long> builds = DAMAGED.get(level);
+        if (builds == null || builds.isEmpty()) {
+            return EMPTY;
+        }
+        return builds.keySet().toArray(EMPTY);
     }
 
     /**
