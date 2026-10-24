@@ -42,6 +42,8 @@ public final class ImpactCallback implements BlockSubLevelCollisionCallback {
     public static final ImpactCallback INSTANCE = new ImpactCallback();
 
     private static final Vector3d NO_TANGENT_MOTION = new Vector3d();
+    private static final double[] KEEP_CONTACT = {0.0, 0.0, 0.0, 0.0};
+    private static final double[] DROP_CONTACT = {0.0, 0.0, 0.0, 1.0};
     private static final int PLOT_CACHE = 8;
 
     private final ContactTracker contacts = new ContactTracker();
@@ -55,6 +57,38 @@ public final class ImpactCallback implements BlockSubLevelCollisionCallback {
 
     private ImpactCallback() {
         forgetPlots();
+    }
+
+    /**
+     * The native solver's upcall, taken over from Sable's default so that the contacts nobody needs - nearly
+     * all of them - are turned away before a single object is made. The default builds two positions, a
+     * vector and an array per call, and Rapier makes this call per contact point per substep.
+     *
+     * <p>The returned arrays are shared: the solver only copies them out.
+     */
+    @Override
+    public double[] onCollision(final int x, final int y, final int z,
+                                final int otherX, final int otherY, final int otherZ,
+                                final double x1, final double y1, final double z1,
+                                final double impactVelocity, final boolean hasOtherBlock) {
+        if (!ImpactConfig.enabled()) {
+            return KEEP_CONTACT;
+        }
+        final ImpactConfig.Tuning tuning = ImpactConfig.tuning();
+        if (Math.abs(impactVelocity) < Math.min(tuning.breakSpeedFloor(), tuning.fragileTrigger())) {
+            return KEEP_CONTACT;
+        }
+        final CollisionResult result = sable$onCollision(new BlockPos(x, y, z),
+                hasOtherBlock ? new BlockPos(otherX, otherY, otherZ) : null,
+                new Vector3d(x1, y1, z1), impactVelocity);
+        if (result == CollisionResult.NONE) {
+            return KEEP_CONTACT;
+        }
+        final var motion = result.tangentMotion();
+        if (motion.x() == 0.0 && motion.y() == 0.0 && motion.z() == 0.0) {
+            return result.removeCollision() ? DROP_CONTACT : KEEP_CONTACT;
+        }
+        return new double[]{motion.x(), motion.y(), motion.z(), result.removeCollision() ? 1.0 : 0.0};
     }
 
     /**

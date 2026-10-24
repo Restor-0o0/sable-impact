@@ -283,7 +283,7 @@ public final class HullSweeper {
      * in this one is slightly blunter carving.
      */
     private static void adapt(final long nanos) {
-        if (!ImpactConfig.ADAPTIVE_DETAIL.get()) {
+        if (!ImpactConfig.pick(ImpactConfig.ADAPTIVE_DETAIL)) {
             detail = 0;
             return;
         }
@@ -296,7 +296,7 @@ public final class HullSweeper {
             }
             return;
         }
-        if (nanos * 3 < (long) (ImpactConfig.MAX_TICK_MILLIS.get() * 1.0e6)) {
+        if (nanos * 3 < (long) (ImpactConfig.pick(ImpactConfig.MAX_TICK_MILLIS) * 1.0e6)) {
             overruns = 0;
             if (++easyTicks >= 100 && detail > 0) {
                 detail--;
@@ -350,9 +350,9 @@ public final class HullSweeper {
      */
     private static void sweep(final ServerLevel serverLevel) {
         final ImpactConfig.Tuning tuning = ImpactConfig.tuning();
-        final boolean clearSoft = ImpactConfig.CLEAR_SOFT_BLOCKS.get();
-        final boolean clearOverlaps = ImpactConfig.CLEAR_OVERLAPS.get();
-        final boolean carve = ImpactConfig.CARVE_THROUGH_TERRAIN.get();
+        final boolean clearSoft = ImpactConfig.pick(ImpactConfig.CLEAR_SOFT_BLOCKS);
+        final boolean clearOverlaps = ImpactConfig.pick(ImpactConfig.CLEAR_OVERLAPS);
+        final boolean carve = ImpactConfig.pick(ImpactConfig.CARVE_THROUGH_TERRAIN);
         final boolean crush = tuning.crushBlocks() && tuning.maxCrushPerTick() > 0;
         if (!clearSoft && !clearOverlaps && !carve && !crush) {
             return;
@@ -370,20 +370,20 @@ public final class HullSweeper {
             scanTick = now;
             sweptThisTick = 0;
             carvedThisTick = 0;
-            scanBudget = ImpactConfig.SWEEP_SCAN_BUDGET.get();
+            scanBudget = ImpactConfig.pick(ImpactConfig.SWEEP_SCAN_BUDGET);
             adapt(tickNanos);
             tickNanos = 0L;
-            deadline = System.nanoTime() + (long) (ImpactConfig.MAX_TICK_MILLIS.get() * 1.0e6);
+            deadline = System.nanoTime() + (long) (ImpactConfig.pick(ImpactConfig.MAX_TICK_MILLIS) * 1.0e6);
             spent = false;
             workSinceClock = 0;
             idleChecks = 0;
         }
 
-        final int softInterval = ImpactConfig.SOFT_SWEEP_INTERVAL.get();
-        final int overlapInterval = ImpactConfig.OVERLAP_SWEEP_INTERVAL.get();
-        final double minSpeed = ImpactConfig.SOFT_SWEEP_MIN_SPEED.get();
-        final double carveSpeed = ImpactConfig.CARVE_MIN_SPEED.get();
-        final boolean drop = ImpactConfig.DROP_ITEMS.get();
+        final int softInterval = ImpactConfig.pick(ImpactConfig.SOFT_SWEEP_INTERVAL);
+        final int overlapInterval = ImpactConfig.pick(ImpactConfig.OVERLAP_SWEEP_INTERVAL);
+        final double minSpeed = ImpactConfig.pick(ImpactConfig.SOFT_SWEEP_MIN_SPEED);
+        final double carveSpeed = ImpactConfig.pick(ImpactConfig.CARVE_MIN_SPEED);
+        final boolean drop = ImpactConfig.pick(ImpactConfig.DROP_ITEMS);
 
         ORDER.clear();
         ORDER.addAll(container.getAllSubLevels());
@@ -451,7 +451,7 @@ public final class HullSweeper {
 
             if (carve && speed >= carveSpeed) {
                 final long started = ImpactStats.mark();
-                carve(serverLevel, subLevel, velocity, speed, ImpactConfig.CARVE_MAX_BLOCKS.get());
+                carve(serverLevel, subLevel, velocity, speed, ImpactConfig.pick(ImpactConfig.CARVE_MAX_BLOCKS));
                 ImpactStats.since(ImpactStats.Phase.CARVE, started);
             }
             // Weight is not something a hull only has while parked. A boulder rolling down a hillside presses
@@ -475,7 +475,7 @@ public final class HullSweeper {
             if (clearSoft && SweepDetail.cosmetic(detail) && moving && (now + id) % softInterval == 0L) {
                 final long started = ImpactStats.mark();
                 sweepSoft(serverLevel, subLevel, velocity, speed, softInterval,
-                        ImpactConfig.SOFT_SWEEP_MAX_BLOCKS.get(), drop);
+                        ImpactConfig.pick(ImpactConfig.SOFT_SWEEP_MAX_BLOCKS), drop);
                 ImpactStats.since(ImpactStats.Phase.SOFT, started);
             }
 
@@ -501,7 +501,7 @@ public final class HullSweeper {
                 if ((now + id) % interval == 0L) {
                     final long started = ImpactStats.mark();
                     final int freed = sweepOverlaps(serverLevel, subLevel, bounds,
-                            ImpactConfig.OVERLAP_SWEEP_MAX_BLOCKS.get(), drop, deep, desperate);
+                            ImpactConfig.pick(ImpactConfig.OVERLAP_SWEEP_MAX_BLOCKS), drop, deep, desperate);
                     ImpactStats.since(ImpactStats.Phase.OVERLAP, started);
                     if (freed > 0) {
                         tracked.lastMoved = now;
@@ -662,8 +662,8 @@ public final class HullSweeper {
         final double clip = SweepDetail.clip(rung);
         final int steps = SweepDetail.steps(travel, rung);
         final int leading = dominantAxis(velocity);
-        final double boreSpeed = speed >= ImpactConfig.BORE_MIN_SPEED.get()
-                ? speed * ImpactConfig.BORE_SHARE.get()
+        final double boreSpeed = speed >= ImpactConfig.pick(ImpactConfig.BORE_MIN_SPEED)
+                ? speed * ImpactConfig.pick(ImpactConfig.BORE_SHARE)
                 : 0.0;
         final BlockPos.MutableBlockPos wall = new BlockPos.MutableBlockPos();
         final double mass = massOf(subLevel);
@@ -1590,7 +1590,7 @@ public final class HullSweeper {
                                      final boolean desperate) {
         final Budget budget = new Budget(maxCleared);
         final Vector3d local = new Vector3d();
-        final boolean displace = ImpactConfig.DISPLACE_OVERLAPS.get();
+        final boolean displace = ImpactConfig.pick(ImpactConfig.DISPLACE_OVERLAPS);
         final boolean grind = desperate && ImpactConfig.tuning().breakContraptionBlocks();
         final BlockPos.MutableBlockPos plot = new BlockPos.MutableBlockPos();
         final double centreX = (bounds.minX() + bounds.maxX()) * 0.5;

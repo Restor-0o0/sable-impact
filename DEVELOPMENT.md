@@ -1,6 +1,7 @@
 # Development
 
-Orientation for someone arriving at this codebase. [`README.md`](README.md) is for people who install the
+Orientation for someone arriving at this codebase. [`README.md`](README.md) is the short description that also goes on Modrinth and CurseForge, and
+[`CONFIGURATION.md`](CONFIGURATION.md) is the full guide for people who install the
 mod; [`AERO_IMPACT_DESIGN.md`](AERO_IMPACT_DESIGN.md) is the design document the model was built from. This
 file is about where things are and why they are shaped the way they are.
 
@@ -219,18 +220,21 @@ the heightmap and left alone for a while, which is the ordinary case for anythin
 1. Declare a `public static final ModConfigSpec.*Value` in `ImpactConfig`, next to the ones it relates to —
    declaration order is the order it appears in the generated toml. The `.comment(...)` is the whole of its
    documentation for a server owner, so say what the trade is, not just what the number does.
-2. Add a component to `ImpactConfig.Tuning` and read it in `Tuning.read()`. **The record's component order
+2. Add a component to `ImpactConfig.Tuning` and read it in `Tuning.read()` through `pick(VALUE)`, never
+   `VALUE.get()`, so the presets can speak for it. **The record's component order
    and the constructor call must line up** — they are positional, and the compiler only catches a mismatch if
    the types differ.
 3. Skip `Tuning` only if the value is not read per tick. `cullInteriorVoxels` is read straight off the spec
    because it is asked from a remesh with no tick around it; `sweepFinestDetail` and `materialOverrides` are
    pushed into their classes from `read()`.
-4. Document it in the README's reference tables. Every key in the code is in there, and nothing else is.
+4. Document it in the reference tables in `CONFIGURATION.md`. Every key in the code is in there, and nothing else is.
 5. Add a label for it to `assets/create_aeronautics_impact/lang/en_us.json`, keyed
    `create_aeronautics_impact.configuration.<leafName>` — the leaf, not the path, which is why two keys of
    the same name in different sections share one label. Without it the settings screen shows the raw key.
 
-Defaults must reproduce existing behaviour exactly, so that upgrading is a no-op on an existing world.
+Defaults must reproduce existing behaviour exactly, so that upgrading is a no-op on an existing world. A
+setting that a preset should change goes into the matching table in `Presets`: absolute values for the
+performance presets, factors (or booleans) for the destruction presets.
 
 ## How to add a sweep pass
 

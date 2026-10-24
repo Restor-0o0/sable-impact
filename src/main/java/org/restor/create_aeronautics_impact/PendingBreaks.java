@@ -197,7 +197,7 @@ public final class PendingBreaks {
         BuildDamage.sweep(level, tuning);
 
         final long started = System.nanoTime();
-        final long deadline = started + (long) (ImpactConfig.MAX_TICK_MILLIS.get() * 1.0e6);
+        final long deadline = started + (long) (ImpactConfig.pick(ImpactConfig.MAX_TICK_MILLIS) * 1.0e6);
         BoundsBatch.open(tuning);
         try {
             breakPass(level, tuning, started, deadline, timed);

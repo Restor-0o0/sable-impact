@@ -93,10 +93,16 @@ public final class VoxelClassifier {
         if (allSolid) {
             return VoxelNeighborhoodState.INTERIOR;
         }
-        // Buried is the only case a claimed block gives its voxel up in; anything with an exposed side is the
-        // first thing a hull can touch and has to be met individually.
         if (cullable) {
-            return VoxelNeighborhoodState.CORNER;
+            final ImpactConfig.ContactDetail detail = ImpactConfig.contactDetail();
+            if (detail == ImpactConfig.ContactDetail.FULL) {
+                return VoxelNeighborhoodState.CORNER;
+            }
+            // Sable drops a pair of touching faces before it builds a contact for them, so a flat face is the
+            // one exposure that costs nothing to give up; an edge still meets a flat face and stays a corner.
+            if (detail == ImpactConfig.ContactDetail.RIM) {
+                return bothSidesCount >= 2 ? VoxelNeighborhoodState.FACE : VoxelNeighborhoodState.CORNER;
+            }
         }
         if (bothSidesCount == 1) {
             return VoxelNeighborhoodState.EDGE;

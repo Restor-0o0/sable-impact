@@ -35,7 +35,7 @@ param(
 $ErrorActionPreference = 'Stop'
 
 # One line per shipped jar.
-$Branches = @('release', 'fast')
+$Branches = @('release')
 
 $repo = $PSScriptRoot
 if (-not (Test-Path (Join-Path $repo 'gradlew.bat'))) {

@@ -204,5 +204,8 @@
   "create_aeronautics_impact.configuration.terrainScale": "Terrain Scale",
   "create_aeronautics_impact.configuration.ticks": "Ticks",
   "create_aeronautics_impact.configuration.total": "Total",
-  "create_aeronautics_impact.configuration.volume": "Volume"
+  "create_aeronautics_impact.configuration.volume": "Volume",
+  "create_aeronautics_impact.configuration.performancePreset": "Performance Preset",
+  "create_aeronautics_impact.configuration.destructionPreset": "Destruction Preset",
+  "create_aeronautics_impact.configuration.contactDetail": "Contact Detail"
 }

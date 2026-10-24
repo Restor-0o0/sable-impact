@@ -38,6 +38,25 @@ public final class ImpactConfig {
                     "It is read live, so it takes effect on the tick after the file is saved.")
             .define("enabled", true);
 
+    public static final ModConfigSpec.EnumValue<PerformancePreset> PERFORMANCE_PRESET = BUILDER
+            .comment("How much of the server tick the mod is allowed to spend, as one choice.",
+                    "QUALITY is every setting below at its own default: the most faithful destruction and the",
+                    "most expensive. BALANCED trims what costs a lot and shows little - fewer contacts on flat",
+                    "landings, slower background passes. FAST is the old fast build: settled debris instead of",
+                    "falling blocks, no block updates on silent removals, smaller shocks and caps everywhere.",
+                    "A preset only replaces settings still at their default. Anything written into this file by",
+                    "hand keeps its value, so a preset is a starting point rather than a lock.")
+            .defineEnum("performancePreset", PerformancePreset.BALANCED);
+
+    public static final ModConfigSpec.EnumValue<DestructionPreset> DESTRUCTION_PRESET = BUILDER
+            .comment("How destructive crashes are, as one choice: GENTLE, LIGHT, NORMAL, HEAVY or DEVASTATING.",
+                    "It multiplies impactStrength (0.4, 0.7, 1, 1.6, 3) and scales how far shocks, cracks and",
+                    "collapses reach and how much one crash may take. GENTLE also turns off crushing by weight,",
+                    "punching through, fractures and collapses, so only what is hit hard breaks.",
+                    "It stacks with performancePreset: the performance preset picks the budgets, this one",
+                    "scales them. Like it, it only touches settings still at their default.")
+            .defineEnum("destructionPreset", DestructionPreset.NORMAL);
+
     public static final ModConfigSpec.DoubleValue IMPACT_STRENGTH = BUILDER
             .comment("Master dial on how hard everything in this mod hits. 1.0 is the tuning every other value",
                     "here was chosen against; 2 makes the whole system twice as destructive, 0.5 half.",
@@ -1743,6 +1762,21 @@ public final class ImpactConfig {
                     "a hull breaks in, the new tunnel wall gets its voxels back before the next step.")
             .define("cullInteriorVoxels", true);
 
+    public static final ModConfigSpec.EnumValue<ContactDetail> CONTACT_DETAIL = BUILDER
+            .comment("How many contacts the physics solver reports where a hull lies flat on flat ground. This is",
+                    "the largest single cost the mod adds to Sable, and it is paid even by builds that are only",
+                    "parked: every reported contact is solver work plus a call into this mod, every substep.",
+                    "FULL reports every block of the footprint, so a landing is felt everywhere at once - and a",
+                    "hull thirty blocks across sitting on a field is nine hundred contacts per substep.",
+                    "RIM lets Sable drop contacts between two flat faces, the way it does without this mod, but",
+                    "keeps every edge and corner. A flat landing is felt around its outline and through its",
+                    "corners, and the footprint is left to the crush pass and the shock; the cost follows the",
+                    "outline of the build rather than its area.",
+                    "VANILLA is Sable's own classification for exposed blocks: cheapest, and a flat landing breaks",
+                    "little beyond the corners that strike first.",
+                    "Applies as chunks and builds are rebuilt; rejoin the world to apply it everywhere at once.")
+            .defineEnum("contactDetail", ContactDetail.FULL);
+
     public static final ModConfigSpec.BooleanValue CARVE_THROUGH_TERRAIN = BUILDER
             .comment("Break the terrain a fast contraption is about to move into, instead of waiting for the",
                     "contact that reports it. Past roughly a block of travel per step the solver stops raising a",
@@ -1977,6 +2011,7 @@ public final class ImpactConfig {
     public static final ModConfigSpec SPEC = BUILDER.build();
 
     private static volatile Tuning cached;
+    private static volatile ContactDetail contactDetail;
 
     private ImpactConfig() {
     }
@@ -1989,6 +2024,7 @@ public final class ImpactConfig {
      */
     public static void invalidate() {
         cached = null;
+        contactDetail = null;
         BlockProfile.clearCache();
     }
 
@@ -2003,6 +2039,29 @@ public final class ImpactConfig {
         if (current == null) {
             current = Tuning.read();
             cached = current;
+        }
+        return current;
+    }
+
+    /**
+     * A setting's value under the active presets: its own value when it has been changed by hand, otherwise
+     * whatever the presets say it should be.
+     */
+    @SuppressWarnings("unchecked")
+    public static <T> T pick(final ModConfigSpec.ConfigValue<T> value) {
+        final T own = value.get();
+        if (!own.equals(value.getDefault())) {
+            return own;
+        }
+        return (T) Presets.resolve(value, own);
+    }
+
+    /** Cached because the collider remesh asks it once per block, off the server thread. */
+    public static ContactDetail contactDetail() {
+        ContactDetail current = contactDetail;
+        if (current == null) {
+            current = pick(CONTACT_DETAIL);
+            contactDetail = current;
         }
         return current;
     }
@@ -2049,6 +2108,26 @@ public final class ImpactConfig {
      * written in the file.
      */
     /** What a broken block turns into on its way out. See {@code [debris] mode}. */
+    public enum PerformancePreset {
+        QUALITY,
+        BALANCED,
+        FAST
+    }
+
+    public enum DestructionPreset {
+        GENTLE,
+        LIGHT,
+        NORMAL,
+        HEAVY,
+        DEVASTATING
+    }
+
+    public enum ContactDetail {
+        FULL,
+        RIM,
+        VANILLA
+    }
+
     public enum DebrisMode {
         FALL,
         THROW,
@@ -2245,193 +2324,193 @@ public final class ImpactConfig {
             // Two of the settings do not belong to any one tick. The sweep ladder is pure arithmetic with
             // nothing from the game in it, so it is told rather than asked; the material table is parsed text,
             // so it is built once here rather than per block.
-            SweepDetail.configure(SWEEP_FINEST_DETAIL.get(), COARSE_SWEEP_TRAVEL.get());
-            MaterialOverrides.reload(MATERIAL_OVERRIDES.get());
+            SweepDetail.configure(pick(SWEEP_FINEST_DETAIL), pick(COARSE_SWEEP_TRAVEL));
+            MaterialOverrides.reload(pick(MATERIAL_OVERRIDES));
 
-            final double strength = IMPACT_STRENGTH.get();
+            final double strength = pick(IMPACT_STRENGTH) * Presets.strength(DESTRUCTION_PRESET.get());
             return new Tuning(
-                    MIN_IMPACT_SPEED.get(),
-                    ImpactResolver.eased(HARDNESS_SCALE.get(), strength),
-                    EXPLOSION_RESISTANCE_FACTOR.get(),
-                    HARDNESS_WEIGHT.get(),
-                    RESISTANCE_EXPONENT.get(),
-                    INDESTRUCTIBLE_RESISTANCE.get(),
-                    MASS_SENSITIVITY.get(),
-                    REFERENCE_PRESSURE.get(),
-                    MASS_FACTOR_MIN.get(),
-                    ImpactResolver.eased(CRUSH_SPEED.get(), strength),
-                    MASS_FACTOR_MAX.get() * Math.max(1.0, strength),
-                    CRUSH_BLOCKS.get(),
-                    ImpactResolver.eased(CRUSH_PRESSURE_SCALE.get(), strength),
-                    CRUSH_INTERVAL.get(),
-                    CRUSH_SPAN.get(),
-                    CRUSH_SCAN_BUDGET.get(),
-                    CRUSH_SEAT.get(),
-                    CRUSH_SHEAR.get(),
-                    CRUSH_DEPTH.get(),
-                    CRUSH_SPREAD.get(),
-                    CRUSH_DISPLACE.get(),
-                    CRUSH_DISPLACE_REACH.get(),
-                    MAX_CRUSH_PER_TICK.get(),
-                    BREAK_CONTRAPTION_BLOCKS.get(),
-                    CONTRAPTION_BLOCK_TOUGHNESS.get(),
-                    BACKING_WEIGHT.get(),
-                    IMPACT_WEAR.get(),
-                    CRACK_BLOCKS.get(),
-                    ImpactResolver.eased(CRACK_RESILIENCE.get(), strength),
-                    CRACK_HEAL_TICKS.get(),
-                    CRACK_SPALL.get(),
-                    MAX_CRACKED_BLOCKS.get(),
-                    MAX_CRACK_EFFECTS_PER_TICK.get(),
-                    MAX_BLOCKS_PER_TICK.get(),
-                    SCATTER_CHANCE.get(),
-                    SCATTER_VELOCITY_SCALE.get(),
-                    MAX_SCATTER_PER_TICK.get(),
-                    MAX_BREAK_EFFECTS_PER_TICK.get(),
-                    DROP_ITEMS.get(),
-                    PUNCH_THROUGH.get(),
-                    PUNCH_THROUGH_RATIO.get(),
-                    SOFT_BREAK_CONTACT.get(),
-                    REBOUND.get(),
-                    REBOUND_SPIN.get(),
-                    BREAK_DRAG_MASS.get(),
-                    BREAK_DRAG_MAX.get(),
-                    FRAGILE_TRIGGER.get(),
-                    MOVING_CRUSH_INTERVAL.get(),
-                    CRUSH_DOWN_SHARE.get(),
-                    CRUSH_SIDE_SHARE.get(),
-                    CRUSH_LEAD_TICKS.get(),
-                    BACKING_REACH.get(),
-                    BACKING_BESIDE.get(),
-                    CRACK_SPALL_CEILING.get(),
-                    CARVE_LOOKAHEAD_TICKS.get(),
-                    STUCK_GRACE_TICKS.get(),
-                    GRIND_STUCK_TICKS.get(),
-                    MAX_QUIET_TICKS.get(),
-                    FREE_FALL_QUIET.get(),
-                    QUIET_MARGIN.get(),
-                    MAX_FALL_QUIET_TICKS.get(),
-                    ANCHOR.get(),
-                    ANCHOR_TICKS.get(),
-                    ANCHOR_CHUNKS.get(),
-                    ANCHOR_BUILDS.get(),
-                    ANCHOR_ALL.get(),
-                    ANCHOR_CHAIN.get(),
-                    ANCHOR_TOTAL.get(),
-                    BACKING_MEMO_TICKS.get(),
-                    MAX_CONTACTS_PER_TICK.get(),
-                    BLOCK_UPDATES.get(),
-                    HULL_BACKING_WEIGHT.get(),
-                    HULL_BACKING_REACH.get(),
-                    CONTRAPTION_SCATTER_CHANCE.get(),
-                    SETTLE.get(),
-                    SETTLE_SHARE.get(),
-                    SETTLE_DROP.get(),
-                    SETTLE_SPREAD.get(),
-                    SCATTER_UPWARD_KICK.get(),
-                    LANDING_SEARCH.get(),
-                    LANDING_NEEDS_FLOOR.get(),
-                    LIFETIME_TICKS.get(),
-                    DROP_WHEN_LOST.get(),
-                    DEBRIS_DAMAGE_PER_BLOCK.get(),
-                    DEBRIS_DAMAGE_MAX.get(),
-                    SHOCK_BLOCKS.get(),
-                    SHOCK_MIN_OVERSHOOT.get(),
-                    HULL_SHOCK_SCALE.get() * Math.max(1.0, strength),
-                    TERRAIN_SHOCK_SCALE.get() * Math.max(1.0, strength),
-                    SHOCK_KINETIC_SCALE.get() * Math.max(1.0, strength),
-                    SHOCK_MIN_SPEED.get(),
-                    SHOCK_CONTACT_SHARE.get(),
-                    SHOCK_MAX_WAVES.get(),
-                    FRACTURE.get(),
-                    FRACTURE_SHARE.get(),
-                    FRACTURE_COUNT.get(),
-                    FRACTURE_FALLOFF.get(),
-                    FRACTURE_WANDER.get(),
-                    FRACTURE_GAP.get(),
-                    FRACTURE_COST.get(),
-                    FRACTURE_AIM.get(),
-                    FRACTURE_SCAN.get(),
-                    FRACTURE_MIN_RUN.get(),
-                    FRACTURE_FLOOR.get(),
-                    HULL_SHARE.get(),
-                    HULL_MIN_SPEED.get(),
-                    FRACTURE_NECK.get(),
-                    FRACTURE_NECK_SPAN.get(),
-                    FRACTURE_NECK_BIAS.get(),
-                    SHOCK_COST.get(),
-                    SHOCK_FALLOFF.get(),
-                    SHOCK_MAX_PER_IMPACT.get(),
-                    SHOCK_MAX_PER_TICK.get(),
-                    SHOCK_MAX_TICKS.get(),
-                    COLLAPSE.get(),
-                    COLLAPSE_SPEED.get(),
-                    COLLAPSE_REACH.get(),
-                    COLLAPSE_BITE.get(),
-                    COLLAPSE_DEPTH.get(),
-                    COLLAPSE_DROP.get(),
-                    COLLAPSE_COOLDOWN.get(),
-                    COLLAPSE_MAX_PER_TICK.get(),
-                    DEBRIS_MODE.get(),
-                    MAX_SETTLE_PER_TICK.get(),
-                    COLLAPSE_MIN_SPEED.get(),
-                    COLLAPSE_FIT.get(),
-                    COLLAPSE_MARGIN.get(),
-                    COLLAPSE_MIN_REACH.get(),
-                    COLLAPSE_FULL_SPEED.get(),
-                    RESOLVE_SPLITS.get(),
-                    SPLIT_ROUNDS.get(),
-                    SPLIT_TICKS.get(),
-                    SPLIT_MILLIS.get(),
-                    SEVER_SEPARATE.get(),
-                    SEVER_LIGAMENT.get(),
-                    SEVER_DIAGONALS.get(),
-                    SEVER_INTERVAL.get(),
-                    SEVER_VOLUME.get(),
-                    SEVER_PIECES.get(),
-                    SEVER_MIN_SIDE.get(),
-                    SEVER_NECK.get(),
-                    SEVER_CARRY.get(),
-                    SEVER_MILLIS.get(),
-                    BEARING.get(),
-                    BEARING_BLOCK_WEIGHT.get(),
-                    BEARING_PRESSURE_SCALE.get(),
-                    BEARING_SPAN.get(),
-                    BEARING_HANGING.get(),
-                    BEARING_REST.get(),
-                    BEARING_MARGIN.get(),
-                    BEARING_DROP.get(),
-                    BEARING_RISE.get(),
-                    BEARING_ROUNDS.get(),
-                    BEARING_INTERVAL.get(),
-                    BEARING_REGIONS_PER_TICK.get(),
-                    BEARING_MAX_REGIONS.get(),
-                    BEARING_MAX_PER_TICK.get(),
-                    BEARING_FALL_SPEED.get(),
-                    PROTECT.get(),
-                    PROTECT_MAX_PER_TICK.get(),
-                    PROTECT_MAX_PER_IMPACT.get(),
-                    PROTECT_REST_TICKS.get(),
-                    SHOCK_ONE_CRASH.get(),
-                    STRESS.get(),
-                    STRESS_INTENSITY_SCALE.get() * Math.max(1.0, strength),
-                    ImpactResolver.eased(BRITTLE_THRESHOLD.get(), strength),
-                    ImpactResolver.eased(DUCTILE_THRESHOLD.get(), strength),
-                    ImpactResolver.eased(STRUCTURAL_THRESHOLD.get(), strength),
-                    BRITTLE_TRANSMIT.get(),
-                    DUCTILE_TRANSMIT.get(),
-                    STRUCTURAL_TRANSMIT.get(),
-                    STRESS_PASS_ON.get(),
-                    STRESS_BACKING.get(),
-                    STRESS_FLOOR.get(),
-                    STRESS_MAX_SCAN.get(),
-                    GLASS_RUN.get(),
-                    GLASS_REACH.get(),
-                    GLASS_SCAN_BUDGET.get(),
-                    GLASS_MAX_PER_IMPACT.get(),
-                    GLASS_MAX_RUNS.get(),
-                    BATCH_BOUNDS.get(),
-                    CACHE_CHUNKS.get());
+                    pick(MIN_IMPACT_SPEED),
+                    ImpactResolver.eased(pick(HARDNESS_SCALE), strength),
+                    pick(EXPLOSION_RESISTANCE_FACTOR),
+                    pick(HARDNESS_WEIGHT),
+                    pick(RESISTANCE_EXPONENT),
+                    pick(INDESTRUCTIBLE_RESISTANCE),
+                    pick(MASS_SENSITIVITY),
+                    pick(REFERENCE_PRESSURE),
+                    pick(MASS_FACTOR_MIN),
+                    ImpactResolver.eased(pick(CRUSH_SPEED), strength),
+                    pick(MASS_FACTOR_MAX) * Math.max(1.0, strength),
+                    pick(CRUSH_BLOCKS),
+                    ImpactResolver.eased(pick(CRUSH_PRESSURE_SCALE), strength),
+                    pick(CRUSH_INTERVAL),
+                    pick(CRUSH_SPAN),
+                    pick(CRUSH_SCAN_BUDGET),
+                    pick(CRUSH_SEAT),
+                    pick(CRUSH_SHEAR),
+                    pick(CRUSH_DEPTH),
+                    pick(CRUSH_SPREAD),
+                    pick(CRUSH_DISPLACE),
+                    pick(CRUSH_DISPLACE_REACH),
+                    pick(MAX_CRUSH_PER_TICK),
+                    pick(BREAK_CONTRAPTION_BLOCKS),
+                    pick(CONTRAPTION_BLOCK_TOUGHNESS),
+                    pick(BACKING_WEIGHT),
+                    pick(IMPACT_WEAR),
+                    pick(CRACK_BLOCKS),
+                    ImpactResolver.eased(pick(CRACK_RESILIENCE), strength),
+                    pick(CRACK_HEAL_TICKS),
+                    pick(CRACK_SPALL),
+                    pick(MAX_CRACKED_BLOCKS),
+                    pick(MAX_CRACK_EFFECTS_PER_TICK),
+                    pick(MAX_BLOCKS_PER_TICK),
+                    pick(SCATTER_CHANCE),
+                    pick(SCATTER_VELOCITY_SCALE),
+                    pick(MAX_SCATTER_PER_TICK),
+                    pick(MAX_BREAK_EFFECTS_PER_TICK),
+                    pick(DROP_ITEMS),
+                    pick(PUNCH_THROUGH),
+                    pick(PUNCH_THROUGH_RATIO),
+                    pick(SOFT_BREAK_CONTACT),
+                    pick(REBOUND),
+                    pick(REBOUND_SPIN),
+                    pick(BREAK_DRAG_MASS),
+                    pick(BREAK_DRAG_MAX),
+                    pick(FRAGILE_TRIGGER),
+                    pick(MOVING_CRUSH_INTERVAL),
+                    pick(CRUSH_DOWN_SHARE),
+                    pick(CRUSH_SIDE_SHARE),
+                    pick(CRUSH_LEAD_TICKS),
+                    pick(BACKING_REACH),
+                    pick(BACKING_BESIDE),
+                    pick(CRACK_SPALL_CEILING),
+                    pick(CARVE_LOOKAHEAD_TICKS),
+                    pick(STUCK_GRACE_TICKS),
+                    pick(GRIND_STUCK_TICKS),
+                    pick(MAX_QUIET_TICKS),
+                    pick(FREE_FALL_QUIET),
+                    pick(QUIET_MARGIN),
+                    pick(MAX_FALL_QUIET_TICKS),
+                    pick(ANCHOR),
+                    pick(ANCHOR_TICKS),
+                    pick(ANCHOR_CHUNKS),
+                    pick(ANCHOR_BUILDS),
+                    pick(ANCHOR_ALL),
+                    pick(ANCHOR_CHAIN),
+                    pick(ANCHOR_TOTAL),
+                    pick(BACKING_MEMO_TICKS),
+                    pick(MAX_CONTACTS_PER_TICK),
+                    pick(BLOCK_UPDATES),
+                    pick(HULL_BACKING_WEIGHT),
+                    pick(HULL_BACKING_REACH),
+                    pick(CONTRAPTION_SCATTER_CHANCE),
+                    pick(SETTLE),
+                    pick(SETTLE_SHARE),
+                    pick(SETTLE_DROP),
+                    pick(SETTLE_SPREAD),
+                    pick(SCATTER_UPWARD_KICK),
+                    pick(LANDING_SEARCH),
+                    pick(LANDING_NEEDS_FLOOR),
+                    pick(LIFETIME_TICKS),
+                    pick(DROP_WHEN_LOST),
+                    pick(DEBRIS_DAMAGE_PER_BLOCK),
+                    pick(DEBRIS_DAMAGE_MAX),
+                    pick(SHOCK_BLOCKS),
+                    pick(SHOCK_MIN_OVERSHOOT),
+                    pick(HULL_SHOCK_SCALE) * Math.max(1.0, strength),
+                    pick(TERRAIN_SHOCK_SCALE) * Math.max(1.0, strength),
+                    pick(SHOCK_KINETIC_SCALE) * Math.max(1.0, strength),
+                    pick(SHOCK_MIN_SPEED),
+                    pick(SHOCK_CONTACT_SHARE),
+                    pick(SHOCK_MAX_WAVES),
+                    pick(FRACTURE),
+                    pick(FRACTURE_SHARE),
+                    pick(FRACTURE_COUNT),
+                    pick(FRACTURE_FALLOFF),
+                    pick(FRACTURE_WANDER),
+                    pick(FRACTURE_GAP),
+                    pick(FRACTURE_COST),
+                    pick(FRACTURE_AIM),
+                    pick(FRACTURE_SCAN),
+                    pick(FRACTURE_MIN_RUN),
+                    pick(FRACTURE_FLOOR),
+                    pick(HULL_SHARE),
+                    pick(HULL_MIN_SPEED),
+                    pick(FRACTURE_NECK),
+                    pick(FRACTURE_NECK_SPAN),
+                    pick(FRACTURE_NECK_BIAS),
+                    pick(SHOCK_COST),
+                    pick(SHOCK_FALLOFF),
+                    pick(SHOCK_MAX_PER_IMPACT),
+                    pick(SHOCK_MAX_PER_TICK),
+                    pick(SHOCK_MAX_TICKS),
+                    pick(COLLAPSE),
+                    pick(COLLAPSE_SPEED),
+                    pick(COLLAPSE_REACH),
+                    pick(COLLAPSE_BITE),
+                    pick(COLLAPSE_DEPTH),
+                    pick(COLLAPSE_DROP),
+                    pick(COLLAPSE_COOLDOWN),
+                    pick(COLLAPSE_MAX_PER_TICK),
+                    pick(DEBRIS_MODE),
+                    pick(MAX_SETTLE_PER_TICK),
+                    pick(COLLAPSE_MIN_SPEED),
+                    pick(COLLAPSE_FIT),
+                    pick(COLLAPSE_MARGIN),
+                    pick(COLLAPSE_MIN_REACH),
+                    pick(COLLAPSE_FULL_SPEED),
+                    pick(RESOLVE_SPLITS),
+                    pick(SPLIT_ROUNDS),
+                    pick(SPLIT_TICKS),
+                    pick(SPLIT_MILLIS),
+                    pick(SEVER_SEPARATE),
+                    pick(SEVER_LIGAMENT),
+                    pick(SEVER_DIAGONALS),
+                    pick(SEVER_INTERVAL),
+                    pick(SEVER_VOLUME),
+                    pick(SEVER_PIECES),
+                    pick(SEVER_MIN_SIDE),
+                    pick(SEVER_NECK),
+                    pick(SEVER_CARRY),
+                    pick(SEVER_MILLIS),
+                    pick(BEARING),
+                    pick(BEARING_BLOCK_WEIGHT),
+                    pick(BEARING_PRESSURE_SCALE),
+                    pick(BEARING_SPAN),
+                    pick(BEARING_HANGING),
+                    pick(BEARING_REST),
+                    pick(BEARING_MARGIN),
+                    pick(BEARING_DROP),
+                    pick(BEARING_RISE),
+                    pick(BEARING_ROUNDS),
+                    pick(BEARING_INTERVAL),
+                    pick(BEARING_REGIONS_PER_TICK),
+                    pick(BEARING_MAX_REGIONS),
+                    pick(BEARING_MAX_PER_TICK),
+                    pick(BEARING_FALL_SPEED),
+                    pick(PROTECT),
+                    pick(PROTECT_MAX_PER_TICK),
+                    pick(PROTECT_MAX_PER_IMPACT),
+                    pick(PROTECT_REST_TICKS),
+                    pick(SHOCK_ONE_CRASH),
+                    pick(STRESS),
+                    pick(STRESS_INTENSITY_SCALE) * Math.max(1.0, strength),
+                    ImpactResolver.eased(pick(BRITTLE_THRESHOLD), strength),
+                    ImpactResolver.eased(pick(DUCTILE_THRESHOLD), strength),
+                    ImpactResolver.eased(pick(STRUCTURAL_THRESHOLD), strength),
+                    pick(BRITTLE_TRANSMIT),
+                    pick(DUCTILE_TRANSMIT),
+                    pick(STRUCTURAL_TRANSMIT),
+                    pick(STRESS_PASS_ON),
+                    pick(STRESS_BACKING),
+                    pick(STRESS_FLOOR),
+                    pick(STRESS_MAX_SCAN),
+                    pick(GLASS_RUN),
+                    pick(GLASS_REACH),
+                    pick(GLASS_SCAN_BUDGET),
+                    pick(GLASS_MAX_PER_IMPACT),
+                    pick(GLASS_MAX_RUNS),
+                    pick(BATCH_BOUNDS),
+                    pick(CACHE_CHUNKS));
         }
 
         /** The lowest speed at which any block, however soft and however heavy the ram, could give way. */
